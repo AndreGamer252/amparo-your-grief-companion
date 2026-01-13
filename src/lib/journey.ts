@@ -225,50 +225,49 @@ export async function saveModuleProgress(
   }
 
   try {
-    try {
-      // Verifica se já existe
-      const { data: existing } = await supabase
-        .from('journey_progress')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('module_id', moduleId)
-        .single();
+    // Verifica se já existe
+    const { data: existing } = await supabase
+      .from('journey_progress')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('module_id', moduleId)
+      .single();
 
-      let completedAt: string | null = null;
-      if (completed) {
-        if (existing?.completed_at) {
-          // Mantém a data original se já existe
-          completedAt = existing.completed_at;
-        } else {
-          // Cria nova data se está marcando como concluído pela primeira vez
-          completedAt = new Date().toISOString();
-        }
-      }
-
-      if (existing) {
-        // Atualiza
-        const { error } = await supabase
-          .from('journey_progress')
-          .update({
-            completed,
-            completed_at: completedAt,
-          })
-          .eq('id', existing.id);
-
-        if (error) throw error;
+    let completedAt: string | null = null;
+    if (completed) {
+      if (existing?.completed_at) {
+        // Mantém a data original se já existe
+        completedAt = existing.completed_at;
       } else {
-        // Insere novo
-        const { error } = await supabase
-          .from('journey_progress')
-          .insert({
-            user_id: userId,
-            module_id: moduleId,
-            completed,
-            completed_at: completedAt,
-          });
-
-        if (error) throw error;
+        // Cria nova data se está marcando como concluído pela primeira vez
+        completedAt = new Date().toISOString();
       }
+    }
+
+    if (existing) {
+      // Atualiza
+      const { error } = await supabase
+        .from('journey_progress')
+        .update({
+          completed,
+          completed_at: completedAt,
+        })
+        .eq('id', existing.id);
+
+      if (error) throw error;
+    } else {
+      // Insere novo
+      const { error } = await supabase
+        .from('journey_progress')
+        .insert({
+          user_id: userId,
+          module_id: moduleId,
+          completed,
+          completed_at: completedAt,
+        });
+
+      if (error) throw error;
+    }
   } catch (error) {
     console.error('Erro ao salvar progresso da jornada:', error);
     throw error;
