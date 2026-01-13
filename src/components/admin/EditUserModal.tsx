@@ -74,7 +74,7 @@ export function EditUserModal({ user, isOpen, onClose, onUpdate }: EditUserModal
 
     setIsSaving(true);
     try {
-      const response = updateUserProfile(user.id, { name, email });
+      const response = await updateUserProfile(user.id, { name, email });
       if (response.success) {
         toast.success('Perfil atualizado com sucesso!');
         onUpdate();
@@ -104,7 +104,7 @@ export function EditUserModal({ user, isOpen, onClose, onUpdate }: EditUserModal
 
     setIsSaving(true);
     try {
-      const response = changeUserPassword(user.id, newPassword);
+      const response = await changeUserPassword(user.id, newPassword);
       if (response.success) {
         toast.success('Senha alterada com sucesso!');
         setNewPassword('');
@@ -129,7 +129,8 @@ export function EditUserModal({ user, isOpen, onClose, onUpdate }: EditUserModal
         ? new Date(subscriptionExpiresAt).toISOString()
         : undefined;
       
-      if (updateUserSubscription(user.id, subscriptionActive, expiresAt)) {
+      const success = await updateUserSubscription(user.id, subscriptionActive, expiresAt);
+      if (success) {
         toast.success(`Assinatura ${subscriptionActive ? 'ativada' : 'desativada'} com sucesso!`);
         onUpdate();
         onClose();
@@ -471,9 +472,12 @@ export function EditUserModal({ user, isOpen, onClose, onUpdate }: EditUserModal
                         if (confirm('Tem certeza que deseja resetar o contador de tokens? Esta ação não pode ser desfeita.')) {
                           setIsSaving(true);
                           try {
-                            if (resetUserTokens(user.id)) {
+                            const success = await resetUserTokens(user.id);
+                            if (success) {
                               toast.success('Contador de tokens resetado!');
                               setTotalTokensUsed(0);
+                              setInputTokensUsed(0);
+                              setOutputTokensUsed(0);
                               onUpdate();
                             } else {
                               toast.error('Erro ao resetar tokens');
@@ -496,8 +500,9 @@ export function EditUserModal({ user, isOpen, onClose, onUpdate }: EditUserModal
                       onClick={async () => {
                         setIsSaving(true);
                         try {
-                          const limit = tokenLimit && tokenLimit.trim() ? parseInt(tokenLimit) : 0;
-                          if (setUserTokenLimit(user.id, limit)) {
+                          const limit = tokenLimit && tokenLimit.trim() ? parseInt(tokenLimit) : undefined;
+                          const success = await setUserTokenLimit(user.id, limit);
+                          if (success) {
                             toast.success('Limite de tokens atualizado!');
                             onUpdate();
                             onClose();

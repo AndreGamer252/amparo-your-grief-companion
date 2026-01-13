@@ -50,11 +50,11 @@ export function AdminDashboard() {
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
 
-  const loadData = () => {
+  const loadData = async () => {
     setIsLoading(true);
     try {
-      const allUsers = getAllUsers();
-      const userMetrics = getUserMetrics();
+      const allUsers = await getAllUsers();
+      const userMetrics = await getUserMetrics();
       setUsers(allUsers);
       setMetrics(userMetrics);
     } catch (error) {
@@ -74,13 +74,14 @@ export function AdminDashboard() {
     navigate('/admin/login');
   };
 
-  const handleToggleSubscription = (userId: string, currentStatus: boolean) => {
+  const handleToggleSubscription = async (userId: string, currentStatus: boolean) => {
     const newStatus = !currentStatus;
     const expiresAt = newStatus
       ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 dias
       : undefined;
 
-    if (updateUserSubscription(userId, newStatus, expiresAt)) {
+    const success = await updateUserSubscription(userId, newStatus, expiresAt);
+    if (success) {
       toast.success(`Assinatura ${newStatus ? 'ativada' : 'desativada'} com sucesso`);
       loadData();
     } else {

@@ -1,9 +1,11 @@
 /**
  * Serviço de administração
  * Gerencia acesso admin e dados de usuários
+ * Usa Supabase quando disponível, com fallback para localStorage
  */
 
 import type { AuthUser } from '@/types/auth';
+import { supabase } from './supabase';
 
 const ADMIN_STORAGE_KEY = 'amparo_admin_auth';
 const USERS_STORAGE_KEY = 'amparo_users';
@@ -92,7 +94,59 @@ export function adminLogout(): void {
 /**
  * Obtém todos os usuários cadastrados
  */
-export function getAllUsers(): AdminUser[] {
+export async function getAllUsers(): Promise<AdminUser[]> {
+  // Usa Supabase se disponível
+  if (supabase) {
+    try {
+      const { data: users, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Erro ao buscar usuários:', error);
+        // Fallback para localStorage
+      } else if (users) {
+        const now = new Date();
+        return users.map((user) => {
+          const expiresAt = user.subscription_expires_at ? new Date(user.subscription_expires_at) : null;
+          
+          let subscriptionStatus: 'active' | 'inactive' | 'expired' = 'inactive';
+          if (user.subscription_active) {
+            if (expiresAt && expiresAt > now) {
+              subscriptionStatus = 'active';
+            } else if (expiresAt && expiresAt <= now) {
+              subscriptionStatus = 'expired';
+            } else if (!expiresAt) {
+              subscriptionStatus = 'active';
+            }
+          }
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            createdAt: user.created_at,
+            lastLoginAt: user.last_login_at || undefined,
+            subscriptionActive: user.subscription_active,
+            subscriptionExpiresAt: user.subscription_expires_at || undefined,
+            inputTokensUsed: user.input_tokens_used || 0,
+            outputTokensUsed: user.output_tokens_used || 0,
+            totalTokensUsed: (user.input_tokens_used || 0) + (user.output_tokens_used || 0),
+            tokenLimit: user.token_limit || undefined,
+            registrationDate: user.created_at,
+            lastAccess: user.last_login_at || undefined,
+            subscriptionStatus,
+          };
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao buscar usuários do Supabase:', error);
+      // Fallback para localStorage
+    }
+  }
+
+  // Fallback: localStorage
   const stored = localStorage.getItem(USERS_STORAGE_KEY);
   if (!stored) return [];
   
@@ -140,8 +194,8 @@ export function getAllUsers(): AdminUser[] {
 /**
  * Obtém métricas dos usuários
  */
-export function getUserMetrics(): UserMetrics {
-  const users = getAllUsers();
+export async function getUserMetrics(): Promise<UserMetrics> {
+  const users = await getAllUsers();
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -203,11 +257,54 @@ export function getUserMetrics(): UserMetrics {
 /**
  * Atualiza status de assinatura de um usuário
  */
-export function updateUserSubscription(
+export async function updateUserSubscription(
   userId: string, 
   active: boolean, 
   expiresAt?: string
-): boolean {
+): Promise<boolean> {
+  // Usa Supabase se disponível
+  if (supabase) {
+    try {
+      const updateData: any = {
+        subscription_active: active,
+      };
+      if (expiresAt) {
+        updateData.subscription_expires_at = expiresAt;
+      }
+
+      const { error } = await supabase
+        .from('users')
+        .update(updateData)
+        .eq('id', userId);
+
+      if (error) {
+        console.error('Erro ao atualizar assinatura:', error);
+        return false;
+      }
+
+      // Atualiza também no auth storage se o usuário estiver logado
+      const authStored = localStorage.getItem('amparo_auth');
+      if (authStored) {
+        try {
+          const authData = JSON.parse(authStored);
+          if (authData.user && authData.user.id === userId) {
+            authData.user.subscriptionActive = active;
+            if (expiresAt) {
+              authData.user.subscriptionExpiresAt = expiresAt;
+            }
+            localStorage.setItem('amparo_auth', JSON.stringify(authData));
+          }
+        } catch {}
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Erro ao atualizar assinatura:', error);
+      // Fallback para localStorage
+    }
+  }
+
+  // Fallback: localStorage
   const stored = localStorage.getItem(USERS_STORAGE_KEY);
   if (!stored) return false;
   
@@ -294,10 +391,61 @@ export function formatFullDate(dateString: string | undefined): string {
 /**
  * Atualiza informações do perfil de um usuário
  */
-export function updateUserProfile(
+export async function updateUserProfile(
   userId: string,
   data: { name?: string; email?: string }
-): { success: boolean; error?: string } {
+): Promise<{ success: boolean; error?: string }> {
+  // Usa Supabase se disponível
+  if (supabase) {
+    try {
+      const updateData: any = {};
+      if (data.name) updateData.name = data.name.trim();
+      if (data.email) {
+        // Verifica se o email já existe
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', data.email.toLowerCase())
+          .single();
+
+        if (existingUser && existingUser.id !== userId) {
+          return { success: false, error: 'Este email já está em uso' };
+        }
+
+        updateData.email = data.email.toLowerCase();
+      }
+
+      const { error } = await supabase
+        .from('users')
+        .update(updateData)
+        .eq('id', userId);
+
+      if (error) {
+        console.error('Erro ao atualizar perfil:', error);
+        return { success: false, error: 'Erro ao atualizar perfil' };
+      }
+
+      // Atualiza também no auth storage se o usuário estiver logado
+      const authStored = localStorage.getItem('amparo_auth');
+      if (authStored) {
+        try {
+          const authData = JSON.parse(authStored);
+          if (authData.user && authData.user.id === userId) {
+            if (data.name) authData.user.name = data.name.trim();
+            if (data.email) authData.user.email = data.email.toLowerCase();
+            localStorage.setItem('amparo_auth', JSON.stringify(authData));
+          }
+        } catch {}
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Erro ao atualizar perfil:', error);
+      // Fallback para localStorage
+    }
+  }
+
+  // Fallback: localStorage
   const stored = localStorage.getItem(USERS_STORAGE_KEY);
   if (!stored) return { success: false, error: 'Nenhum usuário encontrado' };
 
@@ -359,10 +507,42 @@ export function updateUserProfile(
 /**
  * Altera a senha de um usuário
  */
-export function changeUserPassword(
+export async function changeUserPassword(
   userId: string,
   newPassword: string
-): { success: boolean; error?: string } {
+): Promise<{ success: boolean; error?: string }> {
+  if (!newPassword || newPassword.length < 6) {
+    return { success: false, error: 'A senha deve ter pelo menos 6 caracteres' };
+  }
+
+  // Usa Supabase se disponível
+  if (supabase) {
+    try {
+      // Hash da senha
+      const encoder = new TextEncoder();
+      const data = encoder.encode(newPassword);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const passwordHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+      const { error } = await supabase
+        .from('users')
+        .update({ password_hash: passwordHash })
+        .eq('id', userId);
+
+      if (error) {
+        console.error('Erro ao alterar senha:', error);
+        return { success: false, error: 'Erro ao alterar senha' };
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Erro ao alterar senha:', error);
+      // Fallback para localStorage
+    }
+  }
+
+  // Fallback: localStorage
   if (!newPassword || newPassword.length < 6) {
     return { success: false, error: 'A senha deve ter pelo menos 6 caracteres' };
   }
@@ -404,7 +584,47 @@ export function getUserById(userId: string): AdminUser | null {
 /**
  * Define limite de tokens para um usuário (0 = ilimitado)
  */
-export function setUserTokenLimit(userId: string, limit: number | undefined): boolean {
+export async function setUserTokenLimit(userId: string, limit: number | undefined): Promise<boolean> {
+  if (limit === undefined || limit === 0) {
+    limit = null; // null significa ilimitado no Supabase
+  }
+
+  // Usa Supabase se disponível
+  if (supabase) {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ token_limit: limit })
+        .eq('id', userId);
+
+      if (error) {
+        console.error('Erro ao definir limite de tokens:', error);
+        return false;
+      }
+
+      // Atualiza também no auth storage se o usuário estiver logado
+      const authStored = localStorage.getItem('amparo_auth');
+      if (authStored) {
+        try {
+          const authData = JSON.parse(authStored);
+          if (authData.user && authData.user.id === userId) {
+            authData.user.tokenLimit = limit === null ? undefined : limit;
+            localStorage.setItem('amparo_auth', JSON.stringify(authData));
+          }
+        } catch {}
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Erro ao definir limite de tokens:', error);
+      // Fallback para localStorage
+    }
+  }
+
+  // Fallback: localStorage
+  if (limit === null || limit === 0) {
+    limit = 0; // 0 significa ilimitado no localStorage
+  }
   if (limit === undefined || limit === 0) {
     limit = 0; // 0 significa ilimitado
   }
@@ -449,17 +669,17 @@ export function setUserTokenLimit(userId: string, limit: number | undefined): bo
 /**
  * Define limite de tokens para múltiplos usuários
  */
-export function setBulkTokenLimits(userIds: string[], limit: number | undefined): { success: number; failed: number } {
+export async function setBulkTokenLimits(userIds: string[], limit: number | undefined): Promise<{ success: number; failed: number }> {
   let success = 0;
   let failed = 0;
 
-  userIds.forEach(userId => {
-    if (setUserTokenLimit(userId, limit)) {
+  for (const userId of userIds) {
+    if (await setUserTokenLimit(userId, limit)) {
       success++;
     } else {
       failed++;
     }
-  });
+  }
 
   return { success, failed };
 }
@@ -467,7 +687,56 @@ export function setBulkTokenLimits(userIds: string[], limit: number | undefined)
 /**
  * Reseta contador de tokens de um usuário
  */
-export function resetUserTokens(userId: string): boolean {
+export async function resetUserTokens(userId: string): Promise<boolean> {
+  // Usa Supabase se disponível
+  if (supabase) {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({
+          input_tokens_used: 0,
+          output_tokens_used: 0,
+        })
+        .eq('id', userId);
+
+      if (error) {
+        console.error('Erro ao resetar tokens:', error);
+        return false;
+      }
+
+      // Atualiza também no token usage storage
+      const TOKEN_USAGE_KEY = 'amparo_token_usage';
+      const tokenStored = localStorage.getItem(TOKEN_USAGE_KEY);
+      if (tokenStored) {
+        try {
+          const usage: Record<string, { input: number; output: number; total: number }> = JSON.parse(tokenStored);
+          delete usage[userId];
+          localStorage.setItem(TOKEN_USAGE_KEY, JSON.stringify(usage));
+        } catch {}
+      }
+
+      // Atualiza no auth storage
+      const authStored = localStorage.getItem('amparo_auth');
+      if (authStored) {
+        try {
+          const authData = JSON.parse(authStored);
+          if (authData.user && authData.user.id === userId) {
+            authData.user.inputTokensUsed = 0;
+            authData.user.outputTokensUsed = 0;
+            authData.user.totalTokensUsed = 0;
+            localStorage.setItem('amparo_auth', JSON.stringify(authData));
+          }
+        } catch {}
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Erro ao resetar tokens:', error);
+      // Fallback para localStorage
+    }
+  }
+
+  // Fallback: localStorage
   const stored = localStorage.getItem(USERS_STORAGE_KEY);
   if (!stored) return false;
 

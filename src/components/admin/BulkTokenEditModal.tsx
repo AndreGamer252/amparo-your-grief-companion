@@ -33,7 +33,7 @@ export function BulkTokenEditModal({
     setIsSaving(true);
     try {
       const limit = tokenLimit && tokenLimit.trim() ? parseInt(tokenLimit) : 0;
-      const result = setBulkTokenLimits(selectedUserIds, limit);
+      const result = await setBulkTokenLimits(selectedUserIds, limit);
       
       if (result.success > 0) {
         toast.success(`${result.success} usuário(s) atualizado(s) com sucesso!`);
