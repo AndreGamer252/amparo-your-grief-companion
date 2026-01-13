@@ -4,6 +4,7 @@
 
 import { chatWithAmparo } from './openai';
 import type { UserProfile } from '@/types/amparo';
+import { supabase } from './supabase';
 
 export interface JourneyModuleContent {
   id: string;
@@ -214,7 +215,92 @@ function getLossTypeLabel(lossType: string): string {
 /**
  * Salva progresso de um módulo
  */
-export function saveModuleProgress(moduleId: string, completed: boolean): void {
+export async function saveModuleProgress(
+  moduleId: string,
+  completed: boolean,
+  userId?: string
+): Promise<void> {
+  if (!userId) {
+    // Fallback: localStorage
+    const key = `journey_module_${moduleId}`;
+    const existing = localStorage.getItem(key);
+    let completedAt: string | undefined;
+    
+    if (existing) {
+      try {
+        const data = JSON.parse(existing);
+        if (completed && !data.completedAt) {
+          completedAt = new Date().toISOString();
+        } else if (completed && data.completedAt) {
+          completedAt = data.completedAt;
+        }
+      } catch {
+        if (completed) {
+          completedAt = new Date().toISOString();
+        }
+      }
+    } else if (completed) {
+      completedAt = new Date().toISOString();
+    }
+    
+    localStorage.setItem(key, JSON.stringify({ completed, completedAt }));
+    return;
+  }
+
+  // Usa Supabase se disponível
+  if (supabase) {
+    try {
+      // Verifica se já existe
+      const { data: existing } = await supabase
+        .from('journey_progress')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('module_id', moduleId)
+        .single();
+
+      let completedAt: string | null = null;
+      if (completed) {
+        if (existing?.completed_at) {
+          // Mantém a data original se já existe
+          completedAt = existing.completed_at;
+        } else {
+          // Cria nova data se está marcando como concluído pela primeira vez
+          completedAt = new Date().toISOString();
+        }
+      }
+
+      if (existing) {
+        // Atualiza
+        const { error } = await supabase
+          .from('journey_progress')
+          .update({
+            completed,
+            completed_at: completedAt,
+          })
+          .eq('id', existing.id);
+
+        if (error) throw error;
+      } else {
+        // Insere novo
+        const { error } = await supabase
+          .from('journey_progress')
+          .insert({
+            user_id: userId,
+            module_id: moduleId,
+            completed,
+            completed_at: completedAt,
+          });
+
+        if (error) throw error;
+      }
+      return;
+    } catch (error) {
+      console.error('Erro ao salvar progresso da jornada:', error);
+      // Fallback para localStorage
+    }
+  }
+
+  // Fallback: localStorage
   const key = `journey_module_${moduleId}`;
   const existing = localStorage.getItem(key);
   let completedAt: string | undefined;
@@ -222,23 +308,17 @@ export function saveModuleProgress(moduleId: string, completed: boolean): void {
   if (existing) {
     try {
       const data = JSON.parse(existing);
-      // Se está marcando como concluído e não tem data, cria nova
       if (completed && !data.completedAt) {
         completedAt = new Date().toISOString();
       } else if (completed && data.completedAt) {
-        // Se já tem data e está marcando como concluído, mantém a data original
         completedAt = data.completedAt;
       }
-      // Se está desmarcando (completed = false), mantém a data existente (para histórico)
-      // mas não será contado porque verifica completed && completedAt
     } catch {
-      // Se houver erro ao parsear, cria nova data se estiver marcando como concluído
       if (completed) {
         completedAt = new Date().toISOString();
       }
     }
   } else if (completed) {
-    // Se não existe e está marcando como concluído, cria nova data
     completedAt = new Date().toISOString();
   }
   
@@ -248,7 +328,43 @@ export function saveModuleProgress(moduleId: string, completed: boolean): void {
 /**
  * Obtém progresso de um módulo
  */
-export function getModuleProgress(moduleId: string): boolean {
+export async function getModuleProgress(moduleId: string, userId?: string): Promise<boolean> {
+  if (!userId) {
+    // Fallback: localStorage
+    const key = `journey_module_${moduleId}`;
+    const stored = localStorage.getItem(key);
+    if (!stored) return false;
+    
+    try {
+      const data = JSON.parse(stored);
+      return data.completed || false;
+    } catch {
+      return false;
+    }
+  }
+
+  // Usa Supabase se disponível
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('journey_progress')
+        .select('completed')
+        .eq('user_id', userId)
+        .eq('module_id', moduleId)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        throw error;
+      }
+
+      return data?.completed || false;
+    } catch (error) {
+      console.error('Erro ao buscar progresso:', error);
+      // Fallback para localStorage
+    }
+  }
+
+  // Fallback: localStorage
   const key = `journey_module_${moduleId}`;
   const stored = localStorage.getItem(key);
   if (!stored) return false;
@@ -264,14 +380,47 @@ export function getModuleProgress(moduleId: string): boolean {
 /**
  * Obtém todos os módulos com progresso
  */
-export function getAllModulesProgress(): Record<string, boolean> {
+export async function getAllModulesProgress(userId?: string): Promise<Record<string, boolean>> {
   const progress: Record<string, boolean> = {};
-  
+
+  if (!userId) {
+    // Fallback: localStorage
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('journey_module_')) {
+        const moduleId = key.replace('journey_module_', '');
+        progress[moduleId] = await getModuleProgress(moduleId);
+      }
+    }
+    return progress;
+  }
+
+  // Usa Supabase se disponível
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('journey_progress')
+        .select('module_id, completed')
+        .eq('user_id', userId);
+
+      if (!error && data) {
+        data.forEach((item) => {
+          progress[item.module_id] = item.completed;
+        });
+      }
+      return progress;
+    } catch (error) {
+      console.error('Erro ao buscar progresso:', error);
+      // Fallback para localStorage
+    }
+  }
+
+  // Fallback: localStorage
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (key?.startsWith('journey_module_')) {
       const moduleId = key.replace('journey_module_', '');
-      progress[moduleId] = getModuleProgress(moduleId);
+      progress[moduleId] = await getModuleProgress(moduleId);
     }
   }
   

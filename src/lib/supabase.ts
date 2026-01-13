@@ -121,23 +121,32 @@ export interface Database {
         Row: {
           id: string;
           user_id: string;
+          role: 'user' | 'assistant';
           content: string;
-          sender: 'user' | 'amparo';
           timestamp: string;
+          prompt_tokens: number;
+          completion_tokens: number;
+          total_tokens: number;
         };
         Insert: {
           id?: string;
           user_id: string;
+          role: 'user' | 'assistant';
           content: string;
-          sender: 'user' | 'amparo';
           timestamp?: string;
+          prompt_tokens?: number;
+          completion_tokens?: number;
+          total_tokens?: number;
         };
         Update: {
           id?: string;
           user_id?: string;
+          role?: 'user' | 'assistant';
           content?: string;
-          sender?: 'user' | 'amparo';
           timestamp?: string;
+          prompt_tokens?: number;
+          completion_tokens?: number;
+          total_tokens?: number;
         };
       };
       journey_progress: {
@@ -147,6 +156,7 @@ export interface Database {
           module_id: string;
           completed: boolean;
           completed_at: string | null;
+          progress_data: Record<string, any>;
           created_at: string;
         };
         Insert: {
@@ -155,6 +165,7 @@ export interface Database {
           module_id: string;
           completed?: boolean;
           completed_at?: string | null;
+          progress_data?: Record<string, any>;
           created_at?: string;
         };
         Update: {
@@ -163,6 +174,7 @@ export interface Database {
           module_id?: string;
           completed?: boolean;
           completed_at?: string | null;
+          progress_data?: Record<string, any>;
           created_at?: string;
         };
       };

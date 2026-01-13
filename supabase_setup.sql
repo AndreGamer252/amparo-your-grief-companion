@@ -3,112 +3,112 @@
 -- Execute este script no SQL Editor do Supabase
 -- ============================================
 
--- Tabela de usuários
-CREATE TABLE IF NOT EXISTS users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+-- Tabela de usuários (vinculada ao Supabase Auth)
+CREATE TABLE IF NOT EXISTS public.users (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT UNIQUE NOT NULL,
   name TEXT NOT NULL,
-  password_hash TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
   last_login_at TIMESTAMP WITH TIME ZONE,
-  subscription_active BOOLEAN DEFAULT false,
+  subscription_active BOOLEAN DEFAULT false NOT NULL,
   subscription_expires_at TIMESTAMP WITH TIME ZONE,
-  input_tokens_used INTEGER DEFAULT 0,
-  output_tokens_used INTEGER DEFAULT 0,
-  token_limit INTEGER,
-  profile_data JSONB DEFAULT '{}'::jsonb
+  total_tokens_used BIGINT DEFAULT 0 NOT NULL,
+  input_tokens_used BIGINT DEFAULT 0 NOT NULL,
+  output_tokens_used BIGINT DEFAULT 0 NOT NULL,
+  token_limit BIGINT,
+  profile_data JSONB DEFAULT '{}'::jsonb NOT NULL
 );
 
 -- Tabela de memórias
-CREATE TABLE IF NOT EXISTS memories (
+CREATE TABLE IF NOT EXISTS public.memories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
   title TEXT NOT NULL,
   content TEXT NOT NULL,
   date DATE NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('carta', 'lembranca')),
   image_url TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
 
 -- Tabela de check-ins
-CREATE TABLE IF NOT EXISTS check_ins (
+CREATE TABLE IF NOT EXISTS public.check_ins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
   date DATE NOT NULL,
   mood INTEGER NOT NULL CHECK (mood BETWEEN 1 AND 5),
   note TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
   UNIQUE(user_id, date)
 );
 
 -- Tabela de mensagens do chat
-CREATE TABLE IF NOT EXISTS chat_messages (
+CREATE TABLE IF NOT EXISTS public.chat_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
   content TEXT NOT NULL,
-  sender TEXT NOT NULL CHECK (sender IN ('user', 'amparo')),
-  timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+  prompt_tokens INTEGER DEFAULT 0,
+  completion_tokens INTEGER DEFAULT 0,
+  total_tokens INTEGER DEFAULT 0
 );
 
 -- Tabela de progresso da jornada
-CREATE TABLE IF NOT EXISTS journey_progress (
+CREATE TABLE IF NOT EXISTS public.journey_progress (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
   module_id TEXT NOT NULL,
-  completed BOOLEAN DEFAULT false,
+  completed BOOLEAN DEFAULT false NOT NULL,
   completed_at TIMESTAMP WITH TIME ZONE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  progress_data JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
   UNIQUE(user_id, module_id)
 );
 
 -- Índices para performance
-CREATE INDEX IF NOT EXISTS idx_memories_user_id ON memories(user_id);
-CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_check_ins_user_id ON check_ins(user_id);
-CREATE INDEX IF NOT EXISTS idx_check_ins_date ON check_ins(date);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_user_id ON chat_messages(user_id);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_journey_progress_user_id ON journey_progress(user_id);
-CREATE INDEX IF NOT EXISTS idx_journey_progress_module_id ON journey_progress(module_id);
+CREATE INDEX IF NOT EXISTS idx_memories_user_id ON public.memories(user_id);
+CREATE INDEX IF NOT EXISTS idx_memories_created_at ON public.memories(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_check_ins_user_id ON public.check_ins(user_id);
+CREATE INDEX IF NOT EXISTS idx_check_ins_date ON public.check_ins(date);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_user_id ON public.chat_messages(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON public.chat_messages(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_journey_progress_user_id ON public.journey_progress(user_id);
+CREATE INDEX IF NOT EXISTS idx_journey_progress_module_id ON public.journey_progress(module_id);
 
 -- RLS (Row Level Security) - Segurança
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE memories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE check_ins ENABLE ROW LEVEL SECURITY;
-ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE journey_progress ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.memories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.check_ins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.journey_progress ENABLE ROW LEVEL SECURITY;
 
 -- Políticas RLS para users
--- Nota: Como não estamos usando Supabase Auth, vamos usar uma abordagem diferente
--- Permitir leitura/escrita baseado em user_id armazenado no localStorage
--- Para produção, considere usar Supabase Auth
+-- Usuários podem ver e atualizar apenas seu próprio perfil
+DROP POLICY IF EXISTS "Users can view and update their own profile" ON public.users;
+CREATE POLICY "Users can view and update their own profile" ON public.users
+  FOR ALL USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
 
--- Política temporária: permitir tudo (será restringida depois)
--- IMPORTANTE: Em produção, você deve criar políticas mais restritivas
-CREATE POLICY "Enable all operations for users" ON users
-  FOR ALL USING (true) WITH CHECK (true);
+-- Políticas RLS para memories
+-- Usuários podem ver, criar, atualizar e deletar apenas suas próprias memórias
+DROP POLICY IF EXISTS "Users can manage their own memories" ON public.memories;
+CREATE POLICY "Users can manage their own memories" ON public.memories
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Enable all operations for memories" ON memories
-  FOR ALL USING (true) WITH CHECK (true);
+-- Políticas RLS para check_ins
+-- Usuários podem ver, criar e atualizar apenas seus próprios check-ins
+DROP POLICY IF EXISTS "Users can manage their own check-ins" ON public.check_ins;
+CREATE POLICY "Users can manage their own check-ins" ON public.check_ins
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Enable all operations for check_ins" ON check_ins
-  FOR ALL USING (true) WITH CHECK (true);
+-- Políticas RLS para chat_messages
+-- Usuários podem ver e criar apenas suas próprias mensagens
+DROP POLICY IF EXISTS "Users can manage their own chat messages" ON public.chat_messages;
+CREATE POLICY "Users can manage their own chat messages" ON public.chat_messages
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Enable all operations for chat_messages" ON chat_messages
-  FOR ALL USING (true) WITH CHECK (true);
-
-CREATE POLICY "Enable all operations for journey_progress" ON journey_progress
-  FOR ALL USING (true) WITH CHECK (true);
-
--- ============================================
--- NOTA IMPORTANTE DE SEGURANÇA:
--- ============================================
--- As políticas acima permitem acesso total.
--- Para produção, você deve:
--- 1. Usar Supabase Auth para autenticação
--- 2. Criar políticas que verificam auth.uid()
--- 3. Exemplo de política segura:
---    CREATE POLICY "Users can only see own data" ON memories
---      FOR SELECT USING (auth.uid()::text = user_id::text);
--- ============================================
+-- Políticas RLS para journey_progress
+-- Usuários podem ver e atualizar apenas seu próprio progresso
+DROP POLICY IF EXISTS "Users can manage their own journey progress" ON public.journey_progress;
+CREATE POLICY "Users can manage their own journey progress" ON public.journey_progress
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);

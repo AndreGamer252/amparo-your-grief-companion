@@ -107,15 +107,19 @@ export function Journey() {
 
   useEffect(() => {
     // Carrega progresso salvo
-    const savedProgress = getAllModulesProgress();
-    setProgress(savedProgress);
+    const loadProgress = async () => {
+      const savedProgress = await getAllModulesProgress(authUser?.id);
+      setProgress(savedProgress);
+      
+      // Atualiza módulos com progresso
+      setModules(prev => prev.map(m => ({
+        ...m,
+        completed: savedProgress[m.id] || false,
+      })));
+    };
     
-    // Atualiza módulos com progresso
-    setModules(prev => prev.map(m => ({
-      ...m,
-      completed: savedProgress[m.id] || false,
-    })));
-  }, []);
+    loadProgress();
+  }, [authUser?.id]);
 
   const completedCount = modules.filter((m) => m.completed).length;
   const progressPercent = (completedCount / modules.length) * 100;
@@ -171,8 +175,8 @@ export function Journey() {
     }
   };
 
-  const handleCompleteModule = (moduleId: string) => {
-    saveModuleProgress(moduleId, true);
+  const handleCompleteModule = async (moduleId: string) => {
+    await saveModuleProgress(moduleId, true, authUser?.id);
     setProgress(prev => ({ ...prev, [moduleId]: true }));
     setModules(prev => prev.map(m => 
       m.id === moduleId ? { ...m, completed: true } : m
@@ -180,8 +184,8 @@ export function Journey() {
     toast.success('Módulo concluído! Parabéns pelo seu progresso.');
   };
 
-  const handleUncompleteModule = (moduleId: string) => {
-    saveModuleProgress(moduleId, false);
+  const handleUncompleteModule = async (moduleId: string) => {
+    await saveModuleProgress(moduleId, false, authUser?.id);
     setProgress(prev => ({ ...prev, [moduleId]: false }));
     setModules(prev => prev.map(m => 
       m.id === moduleId ? { ...m, completed: false } : m

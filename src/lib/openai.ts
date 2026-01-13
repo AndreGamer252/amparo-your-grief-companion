@@ -3,6 +3,8 @@
  * Para uso em ambiente de acolhimento e suporte emocional
  */
 
+import { supabase } from './supabase';
+
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 const MODEL = 'gpt-4o-mini';
 
@@ -267,7 +269,7 @@ export async function chatWithAmparo(
 
     // Registra uso de tokens se userId foi fornecido
     if (userContext?.userId) {
-      recordTokenUsage(
+      await recordTokenUsage(
         userContext.userId,
         usage.prompt_tokens || 0,
         usage.completion_tokens || 0,
@@ -294,13 +296,65 @@ export async function chatWithAmparo(
 /**
  * Registra uso de tokens para um usuário (separando input e output)
  */
-function recordTokenUsage(
+async function recordTokenUsage(
   userId: string,
   inputTokens: number,
   outputTokens: number,
   totalTokens: number
-): void {
+): Promise<void> {
   try {
+    // Usa Supabase se disponível
+    if (supabase) {
+      try {
+        // Busca valores atuais
+        const { data: userData, error: fetchError } = await supabase
+          .from('users')
+          .select('input_tokens_used, output_tokens_used, total_tokens_used')
+          .eq('id', userId)
+          .single();
+
+        if (fetchError && fetchError.code !== 'PGRST116') {
+          throw fetchError;
+        }
+
+        const currentInput = (userData?.input_tokens_used || 0) + inputTokens;
+        const currentOutput = (userData?.output_tokens_used || 0) + outputTokens;
+        const currentTotal = (userData?.total_tokens_used || 0) + totalTokens;
+
+        // Atualiza no Supabase
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({
+            input_tokens_used: currentInput,
+            output_tokens_used: currentOutput,
+            total_tokens_used: currentTotal,
+          })
+          .eq('id', userId);
+
+        if (updateError) throw updateError;
+
+        // Atualiza também no localStorage para sincronização
+        const authStored = localStorage.getItem('amparo_auth');
+        if (authStored) {
+          try {
+            const authData = JSON.parse(authStored);
+            if (authData.user && authData.user.id === userId) {
+              authData.user.totalTokensUsed = currentTotal;
+              authData.user.inputTokensUsed = currentInput;
+              authData.user.outputTokensUsed = currentOutput;
+              localStorage.setItem('amparo_auth', JSON.stringify(authData));
+            }
+          } catch {}
+        }
+
+        return;
+      } catch (error) {
+        console.error('Erro ao salvar tokens no Supabase:', error);
+        // Fallback para localStorage
+      }
+    }
+
+    // Fallback: localStorage
     const TOKEN_USAGE_KEY = 'amparo_token_usage';
     const stored = localStorage.getItem(TOKEN_USAGE_KEY);
     const usage: Record<string, { input: number; output: number; total: number }> = stored 
