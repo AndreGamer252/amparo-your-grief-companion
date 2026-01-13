@@ -135,9 +135,9 @@ export function Chat() {
       };
       // Salva mensagem com tokens
       await addMessage(amparoMessage, {
-        prompt_tokens: response.tokensUsed.prompt_tokens,
-        completion_tokens: response.tokensUsed.completion_tokens,
-        total_tokens: response.tokensUsed.total_tokens,
+        prompt_tokens: response.tokensUsed?.prompt_tokens || 0,
+        completion_tokens: response.tokensUsed?.completion_tokens || 0,
+        total_tokens: response.tokensUsed?.total_tokens || 0,
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erro ao comunicar com a IA';

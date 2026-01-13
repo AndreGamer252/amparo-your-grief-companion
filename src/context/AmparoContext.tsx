@@ -186,10 +186,11 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
   };
 
   const addMessage = async (message: ChatMessage, tokens?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }) => {
+    // Sempre adiciona ao estado local primeiro para exibição imediata
+    setMessages((prev) => [...prev, message]);
+
     if (!authUser?.id || !supabase) {
-      console.error('Usuário não autenticado ou Supabase não configurado');
-      // Ainda adiciona ao estado local para exibição, mas não salva
-      setMessages((prev) => [...prev, message]);
+      console.warn('Usuário não autenticado ou Supabase não configurado - mensagem não será salva');
       return;
     }
 
@@ -213,17 +214,13 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
 
       if (error) throw error;
 
-      // Atualiza estado local com o ID do banco
-      const newMessage: ChatMessage = {
-        ...message,
-        id: data.id,
-      };
-      setMessages((prev) => [...prev, newMessage]);
+      // Atualiza a mensagem no estado local com o ID do banco
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === message.id ? { ...msg, id: data.id } : msg))
+      );
     } catch (error) {
-      console.error('Erro ao salvar mensagem:', error);
-      // Ainda adiciona ao estado local para exibição, mas não salva
-      setMessages((prev) => [...prev, message]);
-      throw error;
+      console.error('Erro ao salvar mensagem no Supabase:', error);
+      // Mensagem já está no estado local, apenas loga o erro
     }
   };
 
