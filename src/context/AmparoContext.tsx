@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 
 interface AmparoContextType {
   user: UserProfile | null;
-  setUser: (user: UserProfile | null) => void;
+  setUser: (user: UserProfile | null) => Promise<void>;
   authUser: AuthUser | null;
   setAuthUser: (user: AuthUser | null) => void;
   todayMood: MoodLevel | null;
@@ -47,8 +47,32 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        // Carrega check-ins
+        // Carrega perfil do usuário
         if (supabase) {
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('profile_data, name')
+            .eq('id', authUser.id)
+            .single();
+
+          if (!userError && userData && userData.profile_data) {
+            const profileData = userData.profile_data as any;
+            // Verifica se tem onboardingComplete no profile_data
+            if (profileData.onboardingComplete) {
+              setUserState({
+                name: profileData.name || userData.name || '',
+                lossType: profileData.lossType,
+                lovedOneName: profileData.lovedOneName,
+                timeSinceLoss: profileData.timeSinceLoss,
+                relationshipDescription: profileData.relationshipDescription,
+                lovedOneDescription: profileData.lovedOneDescription,
+                currentFeelings: profileData.currentFeelings,
+                onboardingComplete: profileData.onboardingComplete || false,
+              });
+            }
+          }
+
+          // Carrega check-ins
           const { data: checkInsData, error: checkInsError } = await supabase
             .from('check_ins')
             .select('*')
@@ -116,8 +140,35 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
     loadData();
   }, [authUser?.id]);
 
-  const setUser = (newUser: UserProfile | null) => {
+  const setUser = async (newUser: UserProfile | null) => {
     setUserState(newUser);
+
+    // Salva no Supabase se o usuário estiver autenticado
+    if (newUser && authUser?.id && supabase) {
+      try {
+        const { error } = await supabase
+          .from('users')
+          .update({
+            profile_data: {
+              name: newUser.name,
+              lossType: newUser.lossType,
+              lovedOneName: newUser.lovedOneName,
+              timeSinceLoss: newUser.timeSinceLoss,
+              relationshipDescription: newUser.relationshipDescription,
+              lovedOneDescription: newUser.lovedOneDescription,
+              currentFeelings: newUser.currentFeelings,
+              onboardingComplete: newUser.onboardingComplete,
+            },
+          })
+          .eq('id', authUser.id);
+
+        if (error) {
+          console.error('Erro ao salvar perfil do usuário:', error);
+        }
+      } catch (error) {
+        console.error('Erro ao salvar perfil do usuário:', error);
+      }
+    }
   };
 
   const setAuthUser = (newAuthUser: AuthUser | null) => {

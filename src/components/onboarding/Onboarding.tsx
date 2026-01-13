@@ -55,9 +55,9 @@ export function Onboarding() {
 
   const totalSteps = 7;
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     if (name && lossType) {
-      setUser({
+      await setUser({
         name,
         lossType,
         lovedOneName: lovedOneName.trim() || undefined,
