@@ -220,7 +220,7 @@ export async function chatWithAmparo(
 
   if (!apiKey) {
     throw new Error(
-      'Chave da API OpenAI não configurada. Por favor, configure VITE_OPENAI_API_KEY no arquivo .env'
+      'Chave da API OpenAI não configurada. Por favor, configure VITE_OPENAI_API_KEY nas variáveis de ambiente do Netlify.'
     );
   }
 

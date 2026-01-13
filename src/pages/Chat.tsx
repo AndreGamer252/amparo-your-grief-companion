@@ -55,6 +55,14 @@ export function Chat() {
   const sendMessage = async (content: string) => {
     if (!content.trim()) return;
 
+    // Validação de tamanho da mensagem
+    if (content.length > 2000) {
+      toast.error('Mensagem muito longa', {
+        description: 'Por favor, limite sua mensagem a 2000 caracteres.',
+      });
+      return;
+    }
+
     // Detecção de risco antes de enviar
     if (detectRiskSignals(content)) {
       toast.warning('Precisamos conversar sobre isso', {
@@ -128,15 +136,25 @@ export function Chat() {
       addMessage(amparoMessage);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erro ao comunicar com a IA';
-      setError(errorMessage);
-      toast.error('Erro ao enviar mensagem', {
-        description: errorMessage,
-      });
+      
+      // Mensagem mais amigável para erro de API key não configurada
+      if (errorMessage.includes('VITE_OPENAI_API_KEY')) {
+        setError('A chave da API não está configurada. Entre em contato com o suporte.');
+        toast.error('Serviço temporariamente indisponível', {
+          description: 'O serviço de IA está sendo configurado. Tente novamente em alguns instantes.',
+          duration: 5000,
+        });
+      } else {
+        setError(errorMessage);
+        toast.error('Erro ao enviar mensagem', {
+          description: 'Desculpe, ocorreu um erro. Por favor, tente novamente.',
+        });
+      }
 
       // Adiciona uma mensagem de erro amigável
       const errorResponse: ChatMessage = {
         id: (Date.now() + 1).toString(),
-        content: 'Desculpe, estou tendo dificuldades técnicas no momento. Por favor, tente novamente em alguns instantes.',
+        content: 'Desculpe, estou tendo dificuldades técnicas no momento. Por favor, tente novamente em alguns instantes. Se o problema persistir, entre em contato com o suporte.',
         sender: 'amparo',
         timestamp: new Date(),
       };
