@@ -1,10 +1,35 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, Sparkles } from 'lucide-react';
+import { Send, Mic, Sparkles, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAmparo } from '@/context/AmparoContext';
 import type { ChatMessage } from '@/types/amparo';
+import { chatWithAmparo, convertMessagesToAPIFormat } from '@/lib/openai';
+import { toast } from 'sonner';
+
+/**
+ * Detecta sinais de risco na mensagem do usuário
+ * Retorna true se detectar risco crítico
+ */
+function detectRiskSignals(message: string): boolean {
+  const riskKeywords = [
+    // Suicídio
+    'quero morrer', 'querer morrer', 'vou me matar', 'me matar', 'suicidar', 'suicídio',
+    'acabar com tudo', 'acabar com a vida', 'não aguento mais viver', 'não vale a pena viver',
+    'seria melhor se eu não existisse', 'não quero mais viver', 'prefiro estar morto',
+    'vou me enforcar', 'vou me jogar', 'pular da ponte', 'tomar remédio demais',
+    // Autolesão
+    'quero me machucar', 'me machucar', 'me cortar', 'me ferir', 'me fazer mal',
+    'autolesão', 'auto-lesão', 'me cortar', 'me queimar', 'me bater',
+    // Violência contra outros
+    'quero machucar', 'vou fazer mal', 'vou matar alguém', 'quero vingança',
+    'vou me vingar', 'quero fazer sofrer',
+  ];
+
+  const lowerMessage = message.toLowerCase();
+  return riskKeywords.some(keyword => lowerMessage.includes(keyword));
+}
 
 const conversationStarters = [
   'Estou me sentindo culpado',
@@ -12,17 +37,11 @@ const conversationStarters = [
   'Só queria conversar',
 ];
 
-const amparoResponses = [
-  'Entendo como você está se sentindo. O luto não é linear, e cada dia pode ser diferente. O que você sentiu hoje que te trouxe aqui?',
-  'Obrigado por compartilhar isso comigo. É corajoso da sua parte falar sobre o que está sentindo. Você não precisa passar por isso sozinho.',
-  'Estou aqui para te ouvir, sem julgamentos. Às vezes, só precisamos de alguém que escute. Me conte mais sobre o que está no seu coração.',
-  'O que você está sentindo é completamente válido. A perda de alguém que amamos deixa marcas profundas. Como posso te ajudar neste momento?',
-];
-
 export function Chat() {
-  const { messages, addMessage, user } = useAmparo();
+  const { messages, addMessage, user, setSosOpen, authUser } = useAmparo();
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -36,6 +55,37 @@ export function Chat() {
   const sendMessage = async (content: string) => {
     if (!content.trim()) return;
 
+    // Detecção de risco antes de enviar
+    if (detectRiskSignals(content)) {
+      toast.warning('Precisamos conversar sobre isso', {
+        description: 'Por favor, clique no botão SOS para buscar ajuda profissional.',
+        duration: 5000,
+      });
+      
+      // Abre o modal SOS
+      setSosOpen(true);
+      
+      // Adiciona mensagem do usuário
+      const userMessage: ChatMessage = {
+        id: Date.now().toString(),
+        content,
+        sender: 'user',
+        timestamp: new Date(),
+      };
+      addMessage(userMessage);
+      
+      // Adiciona resposta de segurança
+      const safetyMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        content: `${user?.name || 'Amigo(a)'}, eu entendo que você está passando por um momento muito difícil e sua dor é real. No entanto, quando você compartilha pensamentos sobre se machucar ou machucar outros, preciso te orientar a buscar ajuda profissional imediata.\n\nPor favor, clique no botão SOS (ícone de telefone) que está na sua tela, ou ligue diretamente para o CVV no número 188. Eles estão disponíveis 24 horas por dia, todos os dias, e são profissionais treinados para te ajudar neste momento.\n\nSua vida importa. Você importa. Por favor, busque ajuda agora mesmo.`,
+        sender: 'amparo',
+        timestamp: new Date(),
+      };
+      addMessage(safetyMessage);
+      setInput('');
+      return;
+    }
+
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       content,
@@ -45,19 +95,55 @@ export function Chat() {
     addMessage(userMessage);
     setInput('');
     setIsTyping(true);
+    setError(null);
 
-    // Simulate AI response
-    setTimeout(() => {
-      const randomResponse = amparoResponses[Math.floor(Math.random() * amparoResponses.length)];
+    try {
+      // Converte mensagens para o formato da API
+      const apiMessages = convertMessagesToAPIFormat(messages);
+
+      // Adiciona a nova mensagem do usuário
+      apiMessages.push({
+        role: 'user',
+        content,
+      });
+
+      // Chama a API da OpenAI
+      const response = await chatWithAmparo(apiMessages, {
+        name: user?.name,
+        lossType: user?.lossType,
+        lovedOneName: user?.lovedOneName,
+        timeSinceLoss: user?.timeSinceLoss,
+        relationshipDescription: user?.relationshipDescription,
+        lovedOneDescription: user?.lovedOneDescription,
+        currentFeelings: user?.currentFeelings,
+        userId: authUser?.id,
+      });
+
       const amparoMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
-        content: randomResponse,
+        content: response.content,
         sender: 'amparo',
         timestamp: new Date(),
       };
       addMessage(amparoMessage);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erro ao comunicar com a IA';
+      setError(errorMessage);
+      toast.error('Erro ao enviar mensagem', {
+        description: errorMessage,
+      });
+
+      // Adiciona uma mensagem de erro amigável
+      const errorResponse: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        content: 'Desculpe, estou tendo dificuldades técnicas no momento. Por favor, tente novamente em alguns instantes.',
+        sender: 'amparo',
+        timestamp: new Date(),
+      };
+      addMessage(errorResponse);
+    } finally {
       setIsTyping(false);
-    }, 2000);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -83,6 +169,20 @@ export function Chat() {
 
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto px-4 lg:px-6 py-4 space-y-4">
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-destructive/10 border border-destructive/20 rounded-2xl p-4 flex items-start gap-3"
+            >
+              <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-destructive">Erro de conexão</p>
+                <p className="text-xs text-destructive/80 mt-1">{error}</p>
+              </div>
+            </motion.div>
+          )}
+
           {messages.length === 0 ? (
             <motion.div
               initial={{ opacity: 0, y: 20 }}

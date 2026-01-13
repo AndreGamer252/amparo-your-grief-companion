@@ -1,9 +1,13 @@
-export type LossType = 'mae' | 'pai' | 'filho' | 'filha' | 'esposo' | 'esposa' | 'amigo' | 'amiga' | 'avo' | 'outro';
+export type LossType = 'mae' | 'pai' | 'filho' | 'filha' | 'filho_filha' | 'esposo' | 'esposa' | 'esposo_esposa' | 'irmao_irma' | 'amigo' | 'amiga' | 'avo' | 'outro';
 
 export interface UserProfile {
   name: string;
   lossType: LossType;
   lovedOneName?: string;
+  timeSinceLoss?: string; // Ex: "3 meses", "1 ano", "2 semanas"
+  relationshipDescription?: string; // Como era a relação entre eles
+  lovedOneDescription?: string; // Características e memórias sobre a pessoa
+  currentFeelings?: string; // Como está se sentindo agora
   onboardingComplete: boolean;
 }
 
@@ -37,7 +41,7 @@ export interface JourneyModule {
   title: string;
   description: string;
   duration: string;
-  type: 'read' | 'listen' | 'exercise';
+  type: 'read' | 'exercise';
   completed: boolean;
   content?: string;
 }

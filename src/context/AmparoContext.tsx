@@ -1,17 +1,23 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import type { UserProfile, DailyCheckIn, ChatMessage, Memory, MoodLevel } from '@/types/amparo';
+import type { AuthUser } from '@/types/auth';
+import { getCurrentUser } from '@/lib/auth';
 
 interface AmparoContextType {
   user: UserProfile | null;
   setUser: (user: UserProfile | null) => void;
+  authUser: AuthUser | null;
+  setAuthUser: (user: AuthUser | null) => void;
   todayMood: MoodLevel | null;
   setTodayMood: (mood: MoodLevel) => void;
   checkIns: DailyCheckIn[];
   addCheckIn: (checkIn: DailyCheckIn) => void;
+  updateCheckIn: (date: string, mood: MoodLevel) => void;
   messages: ChatMessage[];
   addMessage: (message: ChatMessage) => void;
   memories: Memory[];
   addMemory: (memory: Memory) => void;
+  updateMemory: (id: string, updates: Partial<Memory>) => void;
   deleteMemory: (id: string) => void;
   sosOpen: boolean;
   setSosOpen: (open: boolean) => void;
@@ -20,14 +26,21 @@ interface AmparoContextType {
 const AmparoContext = createContext<AmparoContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'amparo_user';
+const CHECKINS_STORAGE_KEY = 'amparo_checkins';
 
 export function AmparoProvider({ children }: { children: ReactNode }) {
   const [user, setUserState] = useState<UserProfile | null>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     return stored ? JSON.parse(stored) : null;
   });
+  const [authUser, setAuthUserState] = useState<AuthUser | null>(() => {
+    return getCurrentUser();
+  });
   const [todayMood, setTodayMood] = useState<MoodLevel | null>(null);
-  const [checkIns, setCheckIns] = useState<DailyCheckIn[]>([]);
+  const [checkIns, setCheckIns] = useState<DailyCheckIn[]>(() => {
+    const stored = localStorage.getItem(CHECKINS_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : [];
+  });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [memories, setMemories] = useState<Memory[]>([
     {
@@ -58,8 +71,49 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const setAuthUser = (newAuthUser: AuthUser | null) => {
+    setAuthUserState(newAuthUser);
+    // O serviço de auth já gerencia o localStorage
+  };
+
   const addCheckIn = (checkIn: DailyCheckIn) => {
-    setCheckIns((prev) => [...prev, checkIn]);
+    setCheckIns((prev) => {
+      // Verifica se já existe um check-in para esta data
+      const existingIndex = prev.findIndex(c => c.date === checkIn.date);
+      let updated: DailyCheckIn[];
+      
+      if (existingIndex >= 0) {
+        // Atualiza o check-in existente
+        updated = [...prev];
+        updated[existingIndex] = checkIn;
+      } else {
+        // Adiciona novo check-in
+        updated = [...prev, checkIn];
+      }
+      
+      // Salva no localStorage
+      localStorage.setItem(CHECKINS_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const updateCheckIn = (date: string, mood: MoodLevel) => {
+    setCheckIns((prev) => {
+      const existingIndex = prev.findIndex(c => c.date === date);
+      let updated: DailyCheckIn[];
+      
+      if (existingIndex >= 0) {
+        updated = [...prev];
+        updated[existingIndex] = { ...updated[existingIndex], mood };
+      } else {
+        // Se não existe, cria um novo
+        updated = [...prev, { date, mood }];
+      }
+      
+      // Salva no localStorage
+      localStorage.setItem(CHECKINS_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const addMessage = (message: ChatMessage) => {
@@ -68,6 +122,12 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
 
   const addMemory = (memory: Memory) => {
     setMemories((prev) => [memory, ...prev]);
+  };
+
+  const updateMemory = (id: string, updates: Partial<Memory>) => {
+    setMemories((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, ...updates } : m))
+    );
   };
 
   const deleteMemory = (id: string) => {
@@ -79,14 +139,18 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         setUser,
+        authUser,
+        setAuthUser,
         todayMood,
         setTodayMood,
         checkIns,
         addCheckIn,
+        updateCheckIn,
         messages,
         addMessage,
         memories,
         addMemory,
+        updateMemory,
         deleteMemory,
         sosOpen,
         setSosOpen,

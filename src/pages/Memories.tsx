@@ -1,15 +1,35 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Plus, Calendar, Heart, PenLine, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, Calendar, Heart, PenLine, X, MoreVertical, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAmparo } from '@/context/AmparoContext';
 import type { Memory } from '@/types/amparo';
+import { toast } from 'sonner';
 
 export function Memories() {
-  const { memories, addMemory } = useAmparo();
+  const { memories, addMemory, updateMemory, deleteMemory } = useAmparo();
   const [showForm, setShowForm] = useState(false);
+  const [editingMemory, setEditingMemory] = useState<Memory | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [memoryToDelete, setMemoryToDelete] = useState<string | null>(null);
   const [newMemory, setNewMemory] = useState({
     title: '',
     content: '',
@@ -29,6 +49,53 @@ export function Memories() {
       createdAt: new Date(),
     };
     addMemory(memory);
+    setNewMemory({ title: '', content: '', type: 'carta' });
+    setShowForm(false);
+    toast.success('Memória guardada com sucesso');
+  };
+
+  const handleEdit = (memory: Memory) => {
+    setEditingMemory(memory);
+    setNewMemory({
+      title: memory.title,
+      content: memory.content,
+      type: memory.type,
+    });
+    setShowForm(true);
+  };
+
+  const handleUpdate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMemory || !newMemory.title.trim() || !newMemory.content.trim()) return;
+
+    updateMemory(editingMemory.id, {
+      title: newMemory.title,
+      content: newMemory.content,
+      type: newMemory.type,
+    });
+    
+    setEditingMemory(null);
+    setNewMemory({ title: '', content: '', type: 'carta' });
+    setShowForm(false);
+    toast.success('Memória atualizada com sucesso');
+  };
+
+  const handleDeleteClick = (memoryId: string) => {
+    setMemoryToDelete(memoryId);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteConfirm = () => {
+    if (memoryToDelete) {
+      deleteMemory(memoryToDelete);
+      toast.success('Memória excluída');
+      setMemoryToDelete(null);
+    }
+    setDeleteConfirmOpen(false);
+  };
+
+  const handleCancelForm = () => {
+    setEditingMemory(null);
     setNewMemory({ title: '', content: '', type: 'carta' });
     setShowForm(false);
   };
@@ -61,8 +128,8 @@ export function Memories() {
           </div>
         </motion.div>
 
-        {/* Add Memory Form */}
-        {showForm && (
+        {/* Add/Edit Memory Form */}
+        {(showForm || editingMemory) && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
@@ -70,12 +137,14 @@ export function Memories() {
           >
             <Card variant="serenity">
               <CardContent className="p-6">
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={editingMemory ? handleUpdate : handleSubmit} className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-display font-semibold text-foreground">Nova Memória</h3>
+                    <h3 className="font-display font-semibold text-foreground">
+                      {editingMemory ? 'Editar Memória' : 'Nova Memória'}
+                    </h3>
                     <button
                       type="button"
-                      onClick={() => setShowForm(false)}
+                      onClick={handleCancelForm}
                       className="p-2 hover:bg-muted rounded-full transition-gentle"
                     >
                       <X className="w-4 h-4 text-muted-foreground" />
@@ -127,11 +196,11 @@ export function Memories() {
                   />
 
                   <div className="flex gap-3">
-                    <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+                    <Button type="button" variant="outline" onClick={handleCancelForm}>
                       Cancelar
                     </Button>
                     <Button type="submit" variant="cta" className="flex-1">
-                      Guardar memória
+                      {editingMemory ? 'Salvar alterações' : 'Guardar memória'}
                     </Button>
                   </div>
                 </form>
@@ -149,9 +218,39 @@ export function Memories() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: index * 0.1 }}
             >
-              <Card variant="feature" className="overflow-hidden">
+              <Card variant="feature" className="overflow-hidden relative">
                 <CardContent className="p-6">
-                  <div className="flex items-start gap-4">
+                  {/* Menu de 3 pontinhos */}
+                  <div className="absolute top-4 right-4">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className="p-1.5 rounded-full hover:bg-muted/50 transition-gentle text-muted-foreground hover:text-foreground"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-40">
+                        <DropdownMenuItem
+                          onClick={() => handleEdit(memory)}
+                          className="cursor-pointer"
+                        >
+                          <Edit className="w-4 h-4 mr-2" />
+                          Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleDeleteClick(memory.id)}
+                          className="cursor-pointer text-destructive focus:text-destructive"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Excluir
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  <div className="flex items-start gap-4 pr-8">
                     <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
                       memory.type === 'carta' ? 'bg-accent/20' : 'bg-coral/10'
                     }`}>
@@ -219,6 +318,29 @@ export function Memories() {
             </Button>
           </motion.div>
         )}
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir memória?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta ação não pode ser desfeita. A memória será permanentemente excluída.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setDeleteConfirmOpen(false)}>
+                Cancelar
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteConfirm}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Excluir
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );

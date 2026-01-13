@@ -1,4 +1,4 @@
-import { Home, MessageCircle, BookOpen, Heart, Phone } from 'lucide-react';
+import { Home, MessageCircle, BookOpen, Heart, Phone, Settings } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAmparo } from '@/context/AmparoContext';
@@ -45,6 +45,22 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      {/* Settings Link */}
+      <div className="px-4 pb-2">
+        <NavLink
+          to="/settings"
+          className={cn(
+            'flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-gentle',
+            location.pathname === '/settings'
+              ? 'bg-primary-soft text-primary'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+          )}
+        >
+          <Settings className="w-5 h-5" />
+          Configurações
+        </NavLink>
+      </div>
 
       {/* SOS Button */}
       <div className="p-4">
