@@ -170,45 +170,55 @@ function getLossTypeLabel(lossType: string): string {
 /**
  * Obtém módulos concluídos da jornada no mês atual
  */
-function getJourneyModulesCompletedThisMonth(): number {
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  startOfMonth.setHours(0, 0, 0, 0);
-  
-  let count = 0;
-  
-  // Itera sobre todas as chaves do localStorage
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key?.startsWith('journey_module_')) {
-      try {
-        const stored = localStorage.getItem(key);
-        if (stored) {
-          const data = JSON.parse(stored);
-          if (data.completed && data.completedAt) {
-            const completedDate = new Date(data.completedAt);
-            completedDate.setHours(0, 0, 0, 0);
-            if (completedDate >= startOfMonth) {
-              count++;
-            }
-          }
-        }
-      } catch {
-        // Ignora erros de parsing
-      }
-    }
+async function getJourneyModulesCompletedThisMonth(userId?: string): Promise<number> {
+  if (!userId) {
+    return 0;
   }
-  
-  return count;
+
+  const { supabase } = await import('./supabase');
+  if (!supabase) {
+    return 0;
+  }
+
+  try {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const { data, error } = await supabase
+      .from('journey_progress')
+      .select('completed_at')
+      .eq('user_id', userId)
+      .eq('completed', true)
+      .not('completed_at', 'is', null);
+
+    if (error) {
+      console.error('Erro ao buscar módulos concluídos:', error);
+      return 0;
+    }
+
+    if (!data) return 0;
+
+    // Conta apenas os que foram concluídos neste mês
+    return data.filter((item) => {
+      const completedDate = new Date(item.completed_at);
+      completedDate.setHours(0, 0, 0, 0);
+      return completedDate >= startOfMonth;
+    }).length;
+  } catch (error) {
+    console.error('Erro ao buscar módulos concluídos:', error);
+    return 0;
+  }
 }
 
 /**
  * Calcula estatísticas do usuário
  */
-export function calculateUserStats(
+export async function calculateUserStats(
   memories: Array<{ createdAt: Date }>,
   messages: Array<{ timestamp: Date }>,
-  checkIns: Array<{ date: string }>
+  checkIns: Array<{ date: string }>,
+  userId?: string
 ) {
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -233,7 +243,7 @@ export function calculateUserStats(
   }).length;
 
   // Conta módulos concluídos da jornada no mês
-  const journeyModulesThisMonth = getJourneyModulesCompletedThisMonth();
+  const journeyModulesThisMonth = await getJourneyModulesCompletedThisMonth(userId);
 
   // Check-ins totais = check-ins de humor + módulos concluídos
   const checkInsThisMonth = moodCheckInsThisMonth + journeyModulesThisMonth;

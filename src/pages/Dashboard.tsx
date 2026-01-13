@@ -43,7 +43,7 @@ const moodIcons = [
 ];
 
 export function Dashboard() {
-  const { user, todayMood, setTodayMood, memories, messages, checkIns, addCheckIn, updateCheckIn } = useAmparo();
+  const { user, todayMood, setTodayMood, memories, messages, checkIns, addCheckIn, updateCheckIn, authUser } = useAmparo();
   const [selectedMood, setSelectedMood] = useState<MoodLevel | null>(todayMood);
   const [dailyInsight, setDailyInsight] = useState<DailyInsight | null>(null);
   const [quote, setQuote] = useState<PersonalizedQuote | null>(null);
@@ -51,8 +51,15 @@ export function Dashboard() {
   const [isLoadingInsight, setIsLoadingInsight] = useState(false);
   const [isLoadingQuote, setIsLoadingQuote] = useState(false);
   const [isLoadingSuggestion, setIsLoadingSuggestion] = useState(false);
+  const [stats, setStats] = useState({ totalMemories: 0, recentMemories: 0, totalMessages: 0, recentMessages: 0, checkInsThisMonth: 0, streak: 0 });
 
-  const stats = calculateUserStats(memories, messages, checkIns);
+  useEffect(() => {
+    const loadStats = async () => {
+      const calculatedStats = await calculateUserStats(memories, messages, checkIns, authUser?.id);
+      setStats(calculatedStats);
+    };
+    loadStats();
+  }, [memories, messages, checkIns, authUser?.id]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();

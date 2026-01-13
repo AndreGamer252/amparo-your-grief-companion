@@ -80,7 +80,7 @@ export function Chat() {
         sender: 'user',
         timestamp: new Date(),
       };
-      addMessage(userMessage);
+      await addMessage(userMessage);
       
       // Adiciona resposta de segurança
       const safetyMessage: ChatMessage = {
@@ -89,7 +89,7 @@ export function Chat() {
         sender: 'amparo',
         timestamp: new Date(),
       };
-      addMessage(safetyMessage);
+      await addMessage(safetyMessage);
       setInput('');
       return;
     }
@@ -100,9 +100,9 @@ export function Chat() {
       sender: 'user',
       timestamp: new Date(),
     };
-    addMessage(userMessage);
-    setInput('');
-    setIsTyping(true);
+      await addMessage(userMessage);
+      setInput('');
+      setIsTyping(true);
     setError(null);
 
     try {
@@ -133,7 +133,12 @@ export function Chat() {
         sender: 'amparo',
         timestamp: new Date(),
       };
-      addMessage(amparoMessage);
+      // Salva mensagem com tokens
+      await addMessage(amparoMessage, {
+        prompt_tokens: response.tokensUsed.prompt_tokens,
+        completion_tokens: response.tokensUsed.completion_tokens,
+        total_tokens: response.tokensUsed.total_tokens,
+      });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erro ao comunicar com a IA';
       
@@ -158,7 +163,7 @@ export function Chat() {
         sender: 'amparo',
         timestamp: new Date(),
       };
-      addMessage(errorResponse);
+      await addMessage(errorResponse);
     } finally {
       setIsTyping(false);
     }

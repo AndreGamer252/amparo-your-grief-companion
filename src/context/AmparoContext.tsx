@@ -15,7 +15,7 @@ interface AmparoContextType {
   addCheckIn: (checkIn: DailyCheckIn) => void;
   updateCheckIn: (date: string, mood: MoodLevel) => void;
   messages: ChatMessage[];
-  addMessage: (message: ChatMessage) => void;
+  addMessage: (message: ChatMessage, tokens?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }) => Promise<void>;
   memories: Memory[];
   addMemory: (memory: Memory) => void;
   updateMemory: (id: string, updates: Partial<Memory>) => void;
@@ -26,14 +26,8 @@ interface AmparoContextType {
 
 const AmparoContext = createContext<AmparoContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'amparo_user';
-const CHECKINS_STORAGE_KEY = 'amparo_checkins';
-
 export function AmparoProvider({ children }: { children: ReactNode }) {
-  const [user, setUserState] = useState<UserProfile | null>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : null;
-  });
+  const [user, setUserState] = useState<UserProfile | null>(null);
   const [authUser, setAuthUserState] = useState<AuthUser | null>(() => {
     return getCurrentUser();
   });
@@ -91,37 +85,26 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
               }))
             );
           }
-        } else {
-          // Fallback: localStorage
-          const storedCheckIns = localStorage.getItem(CHECKINS_STORAGE_KEY);
-          if (storedCheckIns) {
-            setCheckIns(JSON.parse(storedCheckIns));
-          }
 
-          const storedMemories = localStorage.getItem('amparo_memories');
-          if (storedMemories) {
-            setMemories(JSON.parse(storedMemories));
-          } else {
-            // Memórias padrão apenas se não houver nenhuma
-            setMemories([
-              {
-                id: '1',
-                title: 'Carta para você',
-                content: 'Hoje senti sua falta mais do que nunca. Lembrei do seu sorriso quando acordávamos juntos nas manhãs de domingo. Você sempre sabia como fazer tudo parecer melhor.',
-                date: '2024-12-15',
-                type: 'carta',
-                createdAt: new Date('2024-12-15'),
-              },
-              {
-                id: '2',
-                title: 'Nosso último Natal',
-                content: 'A árvore de Natal que você decorou ainda está na foto. Seus enfeites preferidos ainda brilham na minha memória.',
-                date: '2023-12-25',
-                type: 'lembranca',
-                createdAt: new Date('2024-01-10'),
-              },
-            ]);
+          // Carrega mensagens do chat
+          const { data: messagesData, error: messagesError } = await supabase
+            .from('chat_messages')
+            .select('*')
+            .eq('user_id', authUser.id)
+            .order('timestamp', { ascending: true });
+
+          if (!messagesError && messagesData) {
+            setMessages(
+              messagesData.map((msg) => ({
+                id: msg.id,
+                content: msg.content,
+                sender: msg.role === 'user' ? 'user' : 'amparo',
+                timestamp: new Date(msg.timestamp),
+              }))
+            );
           }
+        } else {
+          console.error('Supabase não está configurado');
         }
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
@@ -135,11 +118,6 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
 
   const setUser = (newUser: UserProfile | null) => {
     setUserState(newUser);
-    if (newUser) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
-    }
   };
 
   const setAuthUser = (newAuthUser: AuthUser | null) => {
@@ -148,209 +126,194 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
   };
 
   const addCheckIn = async (checkIn: DailyCheckIn) => {
-    if (!authUser?.id) return;
-
-    // Usa Supabase se disponível
-    if (supabase) {
-      try {
-        // Verifica se já existe
-        const { data: existing } = await supabase
-          .from('check_ins')
-          .select('id')
-          .eq('user_id', authUser.id)
-          .eq('date', checkIn.date)
-          .single();
-
-        if (existing) {
-          // Atualiza
-          const { error } = await supabase
-            .from('check_ins')
-            .update({
-              mood: checkIn.mood,
-              note: checkIn.note || null,
-            })
-            .eq('id', existing.id);
-
-          if (error) throw error;
-        } else {
-          // Insere novo
-          const { error } = await supabase
-            .from('check_ins')
-            .insert({
-              user_id: authUser.id,
-              date: checkIn.date,
-              mood: checkIn.mood,
-              note: checkIn.note || null,
-            });
-
-          if (error) throw error;
-        }
-
-        // Atualiza estado local
-        setCheckIns((prev) => {
-          const existingIndex = prev.findIndex(c => c.date === checkIn.date);
-          if (existingIndex >= 0) {
-            const updated = [...prev];
-            updated[existingIndex] = checkIn;
-            return updated;
-          }
-          return [...prev, checkIn];
-        });
-      } catch (error) {
-        console.error('Erro ao salvar check-in:', error);
-        // Fallback para localStorage
-      }
+    if (!authUser?.id || !supabase) {
+      console.error('Usuário não autenticado ou Supabase não configurado');
+      return;
     }
 
-    // Fallback: localStorage
-    setCheckIns((prev) => {
-      const existingIndex = prev.findIndex(c => c.date === checkIn.date);
-      let updated: DailyCheckIn[];
-      
-      if (existingIndex >= 0) {
-        updated = [...prev];
-        updated[existingIndex] = checkIn;
+    try {
+      // Verifica se já existe
+      const { data: existing } = await supabase
+        .from('check_ins')
+        .select('id')
+        .eq('user_id', authUser.id)
+        .eq('date', checkIn.date)
+        .single();
+
+      if (existing) {
+        // Atualiza
+        const { error } = await supabase
+          .from('check_ins')
+          .update({
+            mood: checkIn.mood,
+            note: checkIn.note || null,
+          })
+          .eq('id', existing.id);
+
+        if (error) throw error;
       } else {
-        updated = [...prev, checkIn];
+        // Insere novo
+        const { error } = await supabase
+          .from('check_ins')
+          .insert({
+            user_id: authUser.id,
+            date: checkIn.date,
+            mood: checkIn.mood,
+            note: checkIn.note || null,
+          });
+
+        if (error) throw error;
       }
-      
-      localStorage.setItem(CHECKINS_STORAGE_KEY, JSON.stringify(updated));
-      return updated;
-    });
+
+      // Atualiza estado local
+      setCheckIns((prev) => {
+        const existingIndex = prev.findIndex(c => c.date === checkIn.date);
+        if (existingIndex >= 0) {
+          const updated = [...prev];
+          updated[existingIndex] = checkIn;
+          return updated;
+        }
+        return [...prev, checkIn];
+      });
+    } catch (error) {
+      console.error('Erro ao salvar check-in:', error);
+      throw error;
+    }
   };
 
   const updateCheckIn = async (date: string, mood: MoodLevel) => {
     await addCheckIn({ date, mood });
   };
 
-  const addMessage = (message: ChatMessage) => {
-    setMessages((prev) => [...prev, message]);
+  const addMessage = async (message: ChatMessage, tokens?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }) => {
+    if (!authUser?.id || !supabase) {
+      console.error('Usuário não autenticado ou Supabase não configurado');
+      // Ainda adiciona ao estado local para exibição, mas não salva
+      setMessages((prev) => [...prev, message]);
+      return;
+    }
+
+    try {
+      // Converte 'sender' para 'role' (user -> user, amparo -> assistant)
+      const role = message.sender === 'user' ? 'user' : 'assistant';
+      
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .insert({
+          user_id: authUser.id,
+          role,
+          content: message.content,
+          timestamp: message.timestamp.toISOString(),
+          prompt_tokens: tokens?.prompt_tokens || 0,
+          completion_tokens: tokens?.completion_tokens || 0,
+          total_tokens: tokens?.total_tokens || 0,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Atualiza estado local com o ID do banco
+      const newMessage: ChatMessage = {
+        ...message,
+        id: data.id,
+      };
+      setMessages((prev) => [...prev, newMessage]);
+    } catch (error) {
+      console.error('Erro ao salvar mensagem:', error);
+      // Ainda adiciona ao estado local para exibição, mas não salva
+      setMessages((prev) => [...prev, message]);
+      throw error;
+    }
   };
 
   const addMemory = async (memory: Memory) => {
-    if (!authUser?.id) {
-      // Fallback: apenas estado local
-      setMemories((prev) => [memory, ...prev]);
-      return;
+    if (!authUser?.id || !supabase) {
+      console.error('Usuário não autenticado ou Supabase não configurado');
+      throw new Error('Não é possível salvar memória sem autenticação');
     }
 
-    // Usa Supabase se disponível
-    if (supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('memories')
-          .insert({
-            user_id: authUser.id,
-            title: memory.title,
-            content: memory.content,
-            date: memory.date,
-            type: memory.type,
-            image_url: memory.imageUrl || null,
-          })
-          .select()
-          .single();
+    try {
+      const { data, error } = await supabase
+        .from('memories')
+        .insert({
+          user_id: authUser.id,
+          title: memory.title,
+          content: memory.content,
+          date: memory.date,
+          type: memory.type,
+          image_url: memory.imageUrl || null,
+        })
+        .select()
+        .single();
 
-        if (error) throw error;
+      if (error) throw error;
 
-        // Atualiza estado local com o ID do banco
-        const newMemory: Memory = {
-          ...memory,
-          id: data.id,
-          createdAt: new Date(data.created_at),
-        };
-        setMemories((prev) => [newMemory, ...prev]);
-        return;
-      } catch (error) {
-        console.error('Erro ao salvar memória:', error);
-        // Fallback para localStorage
-      }
+      // Atualiza estado local com o ID do banco
+      const newMemory: Memory = {
+        ...memory,
+        id: data.id,
+        createdAt: new Date(data.created_at),
+      };
+      setMemories((prev) => [newMemory, ...prev]);
+    } catch (error) {
+      console.error('Erro ao salvar memória:', error);
+      throw error;
     }
-
-    // Fallback: localStorage
-    setMemories((prev) => [memory, ...prev]);
-    const stored = localStorage.getItem('amparo_memories');
-    const allMemories = stored ? JSON.parse(stored) : [];
-    localStorage.setItem('amparo_memories', JSON.stringify([memory, ...allMemories]));
   };
 
   const updateMemory = async (id: string, updates: Partial<Memory>) => {
-    if (!authUser?.id) {
-      // Fallback: apenas estado local
+    if (!authUser?.id || !supabase) {
+      console.error('Usuário não autenticado ou Supabase não configurado');
+      throw new Error('Não é possível atualizar memória sem autenticação');
+    }
+
+    try {
+      const updateData: any = {};
+      if (updates.title) updateData.title = updates.title;
+      if (updates.content) updateData.content = updates.content;
+      if (updates.date) updateData.date = updates.date;
+      if (updates.type) updateData.type = updates.type;
+      if (updates.imageUrl !== undefined) updateData.image_url = updates.imageUrl || null;
+
+      const { error } = await supabase
+        .from('memories')
+        .update(updateData)
+        .eq('id', id)
+        .eq('user_id', authUser.id);
+
+      if (error) throw error;
+
+      // Atualiza estado local
       setMemories((prev) =>
         prev.map((m) => (m.id === id ? { ...m, ...updates } : m))
       );
-      return;
-    }
-
-    // Usa Supabase se disponível
-    if (supabase) {
-      try {
-        const updateData: any = {};
-        if (updates.title) updateData.title = updates.title;
-        if (updates.content) updateData.content = updates.content;
-        if (updates.date) updateData.date = updates.date;
-        if (updates.type) updateData.type = updates.type;
-        if (updates.imageUrl !== undefined) updateData.image_url = updates.imageUrl || null;
-
-        const { error } = await supabase
-          .from('memories')
-          .update(updateData)
-          .eq('id', id)
-          .eq('user_id', authUser.id);
-
-        if (error) throw error;
-      } catch (error) {
-        console.error('Erro ao atualizar memória:', error);
-        // Fallback para localStorage
-      }
-    }
-
-    // Atualiza estado local
-    setMemories((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, ...updates } : m))
-    );
-
-    // Fallback: localStorage
-    const stored = localStorage.getItem('amparo_memories');
-    if (stored) {
-      const allMemories: Memory[] = JSON.parse(stored);
-      const updated = allMemories.map((m) => (m.id === id ? { ...m, ...updates } : m));
-      localStorage.setItem('amparo_memories', JSON.stringify(updated));
+    } catch (error) {
+      console.error('Erro ao atualizar memória:', error);
+      throw error;
     }
   };
 
   const deleteMemory = async (id: string) => {
-    if (!authUser?.id) {
-      // Fallback: apenas estado local
+    if (!authUser?.id || !supabase) {
+      console.error('Usuário não autenticado ou Supabase não configurado');
+      throw new Error('Não é possível deletar memória sem autenticação');
+    }
+
+    try {
+      const { error } = await supabase
+        .from('memories')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', authUser.id);
+
+      if (error) throw error;
+
+      // Atualiza estado local
       setMemories((prev) => prev.filter((m) => m.id !== id));
-      return;
-    }
-
-    // Usa Supabase se disponível
-    if (supabase) {
-      try {
-        const { error } = await supabase
-          .from('memories')
-          .delete()
-          .eq('id', id)
-          .eq('user_id', authUser.id);
-
-        if (error) throw error;
-      } catch (error) {
-        console.error('Erro ao deletar memória:', error);
-        // Fallback para localStorage
-      }
-    }
-
-    // Atualiza estado local
-    setMemories((prev) => prev.filter((m) => m.id !== id));
-
-    // Fallback: localStorage
-    const stored = localStorage.getItem('amparo_memories');
-    if (stored) {
-      const allMemories: Memory[] = JSON.parse(stored);
-      const filtered = allMemories.filter((m) => m.id !== id);
-      localStorage.setItem('amparo_memories', JSON.stringify(filtered));
+    } catch (error) {
+      console.error('Erro ao deletar memória:', error);
+      throw error;
     }
   };
 
