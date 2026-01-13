@@ -1,5 +1,8 @@
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useEffect } from "react";
+import { motion } from "framer-motion";
+import { Home, Heart } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 const NotFound = () => {
   const location = useLocation();
@@ -9,14 +12,33 @@ const NotFound = () => {
   }, [location.pathname]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">404</h1>
-        <p className="mb-4 text-xl text-muted-foreground">Oops! Page not found</p>
-        <a href="/" className="text-primary underline hover:text-primary/90">
-          Return to Home
-        </a>
-      </div>
+    <div className="min-h-screen bg-warmth flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className="text-center space-y-6 max-w-md"
+      >
+        <div className="w-20 h-20 mx-auto rounded-3xl bg-serenity flex items-center justify-center">
+          <Heart className="w-10 h-10 text-serenity-600" />
+        </div>
+        
+        <div className="space-y-2">
+          <h1 className="font-display text-3xl font-semibold text-foreground">
+            Página não encontrada
+          </h1>
+          <p className="text-muted-foreground leading-relaxed">
+            Parece que você se perdeu no caminho. Vamos voltar para um lugar seguro?
+          </p>
+        </div>
+
+        <Link to="/">
+          <Button variant="cta" size="lg">
+            <Home className="w-4 h-4" />
+            Voltar ao início
+          </Button>
+        </Link>
+      </motion.div>
     </div>
   );
 };
