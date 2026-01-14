@@ -31,7 +31,7 @@ const AmparoContext = createContext<AmparoContextType | undefined>(undefined);
 
 export function AmparoProvider({ children }: { children: ReactNode }) {
   const [user, setUserState] = useState<UserProfile | null>(null);
-  const [authUser, setAuthUserState] = useState<AuthUser | null>(() => getCurrentUser());
+  const [authUser, setAuthUserState] = useState<AuthUser | null>(null);
   const [todayMood, setTodayMood] = useState<MoodLevel | null>(null);
   const [checkIns, setCheckIns] = useState<DailyCheckIn[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -57,9 +57,7 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
 
   const setActiveConversationId = (conversationId: string) => {
     setActiveConversationIdState(conversationId);
-    if (authUser?.id) {
-      localStorage.setItem(getConversationStorageKey(authUser.id), conversationId);
-    }
+    // Não salva no localStorage - apenas estado em memória
   };
 
   const startNewConversation = () => {
@@ -98,15 +96,12 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
             tokenLimit: userRow.token_limit || undefined,
           };
           setAuthUserState(hydrated);
-          // Espelha no storage usado pelo app (para ProtectedRoute)
-          localStorage.setItem('amparo_auth', JSON.stringify({ user: hydrated, token: session.access_token }));
           return;
         }
       }
 
-      // Se não há sessão, tenta fallback armazenado
-      const stored = getCurrentUser();
-      setAuthUserState(stored);
+      // Se não há sessão, limpa estado
+      setAuthUserState(null);
     };
 
     hydrateAuthFromSession();
@@ -116,7 +111,6 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
         hydrateAuthFromSession();
       } else {
         setAuthUserState(null);
-        localStorage.removeItem('amparo_auth');
       }
     });
 
@@ -221,20 +215,15 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
 
             setMessages(mapped);
 
-            // Define conversa ativa: localStorage > última conversa existente > nova conversa vazia
-            const stored = localStorage.getItem(getConversationStorageKey(authUser.id));
+            // Define conversa ativa: última conversa existente > nova conversa vazia
             const conversationIds = Array.from(new Set(mapped.map((m) => m.conversationId || LEGACY_CONVERSATION_ID)));
-            if (stored && conversationIds.includes(stored)) {
-              setActiveConversationIdState(stored);
-            } else if (conversationIds.length > 0) {
+            if (conversationIds.length > 0) {
               // Pega a conversa da mensagem mais recente
               const last = mapped[mapped.length - 1]?.conversationId || LEGACY_CONVERSATION_ID;
               setActiveConversationIdState(last);
-              localStorage.setItem(getConversationStorageKey(authUser.id), last);
             } else {
               const fresh = generateConversationId();
               setActiveConversationIdState(fresh);
-              localStorage.setItem(getConversationStorageKey(authUser.id), fresh);
             }
           }
         } else {
@@ -283,13 +272,7 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
 
   const setAuthUser = (newAuthUser: AuthUser | null) => {
     setAuthUserState(newAuthUser);
-    if (!newAuthUser) {
-      localStorage.removeItem('amparo_auth');
-    } else {
-      const stored = localStorage.getItem('amparo_auth');
-      const token = stored ? (() => { try { return JSON.parse(stored).token || ''; } catch { return ''; } })() : '';
-      localStorage.setItem('amparo_auth', JSON.stringify({ user: newAuthUser, token }));
-    }
+    // Não salva no localStorage - apenas estado em memória
   };
 
   const addCheckIn = async (checkIn: DailyCheckIn) => {
