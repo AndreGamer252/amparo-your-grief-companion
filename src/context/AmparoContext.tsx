@@ -31,9 +31,7 @@ const AmparoContext = createContext<AmparoContextType | undefined>(undefined);
 
 export function AmparoProvider({ children }: { children: ReactNode }) {
   const [user, setUserState] = useState<UserProfile | null>(null);
-  const [authUser, setAuthUserState] = useState<AuthUser | null>(() => {
-    return getCurrentUser();
-  });
+  const [authUser, setAuthUserState] = useState<AuthUser | null>(() => getCurrentUser());
   const [todayMood, setTodayMood] = useState<MoodLevel | null>(null);
   const [checkIns, setCheckIns] = useState<DailyCheckIn[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -69,6 +67,63 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
     setActiveConversationId(newId);
     return newId;
   };
+
+  // Sincroniza estado de auth com Supabase Auth (inclui recarregamentos de página)
+  useEffect(() => {
+    if (!supabase) return;
+
+    const hydrateAuthFromSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      const session = data.session;
+      if (session?.user) {
+        // Busca dados complementares em public.users
+        const { data: userRow, error: userError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+
+        if (!userError && userRow) {
+          const hydrated: AuthUser = {
+            id: userRow.id,
+            email: userRow.email,
+            name: userRow.name,
+            createdAt: userRow.created_at,
+            lastLoginAt: userRow.last_login_at || undefined,
+            subscriptionActive: userRow.subscription_active,
+            subscriptionExpiresAt: userRow.subscription_expires_at || undefined,
+            totalTokensUsed: userRow.total_tokens_used || 0,
+            inputTokensUsed: userRow.input_tokens_used || 0,
+            outputTokensUsed: userRow.output_tokens_used || 0,
+            tokenLimit: userRow.token_limit || undefined,
+          };
+          setAuthUserState(hydrated);
+          // Espelha no storage usado pelo app (para ProtectedRoute)
+          localStorage.setItem('amparo_auth', JSON.stringify({ user: hydrated, token: session.access_token }));
+          return;
+        }
+      }
+
+      // Se não há sessão, tenta fallback armazenado
+      const stored = getCurrentUser();
+      setAuthUserState(stored);
+    };
+
+    hydrateAuthFromSession();
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        hydrateAuthFromSession();
+      } else {
+        setAuthUserState(null);
+        localStorage.removeItem('amparo_auth');
+      }
+    });
+
+    return () => {
+      subscription?.subscription.unsubscribe();
+    };
+  }, []);
 
   // Carrega dados do Supabase quando o usuário está autenticado
   useEffect(() => {
@@ -228,7 +283,13 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
 
   const setAuthUser = (newAuthUser: AuthUser | null) => {
     setAuthUserState(newAuthUser);
-    // O serviço de auth já gerencia o localStorage
+    if (!newAuthUser) {
+      localStorage.removeItem('amparo_auth');
+    } else {
+      const stored = localStorage.getItem('amparo_auth');
+      const token = stored ? (() => { try { return JSON.parse(stored).token || ''; } catch { return ''; } })() : '';
+      localStorage.setItem('amparo_auth', JSON.stringify({ user: newAuthUser, token }));
+    }
   };
 
   const addCheckIn = async (checkIn: DailyCheckIn) => {
