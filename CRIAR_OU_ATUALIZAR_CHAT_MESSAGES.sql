@@ -14,16 +14,60 @@ CREATE TABLE IF NOT EXISTS public.chat_messages (
   total_tokens INTEGER DEFAULT 0
 );
 
--- 2. Adiciona colunas que podem estar faltando
+-- 2. Migra de 'sender' para 'role' se necessário e adiciona colunas faltantes
 DO $$ 
 BEGIN
-    -- Adiciona role se não existir
+    -- Se existe 'sender' mas não 'role', migra os dados
+    IF EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'chat_messages' 
+        AND column_name = 'sender'
+    ) AND NOT EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'chat_messages' 
+        AND column_name = 'role'
+    ) THEN
+        -- Adiciona coluna role
+        ALTER TABLE public.chat_messages 
+        ADD COLUMN role TEXT;
+        
+        -- Migra dados: 'user' -> 'user', 'amparo' -> 'assistant'
+        UPDATE public.chat_messages 
+        SET role = CASE 
+            WHEN sender = 'user' THEN 'user'
+            WHEN sender = 'amparo' THEN 'assistant'
+            ELSE 'user'
+        END;
+        
+        -- Torna role NOT NULL
+        ALTER TABLE public.chat_messages 
+        ALTER COLUMN role SET NOT NULL;
+        
+        -- Adiciona constraint
+        ALTER TABLE public.chat_messages 
+        ADD CONSTRAINT chat_messages_role_check CHECK (role IN ('user', 'assistant'));
+        
+        -- Remove coluna sender antiga (opcional - pode manter se quiser)
+        -- ALTER TABLE public.chat_messages DROP COLUMN sender;
+    END IF;
+    
+    -- Adiciona role se não existir (e não há sender)
     IF NOT EXISTS (
         SELECT 1 
         FROM information_schema.columns 
         WHERE table_schema = 'public' 
         AND table_name = 'chat_messages' 
         AND column_name = 'role'
+    ) AND NOT EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'chat_messages' 
+        AND column_name = 'sender'
     ) THEN
         ALTER TABLE public.chat_messages 
         ADD COLUMN role TEXT NOT NULL DEFAULT 'user';
