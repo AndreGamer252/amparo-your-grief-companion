@@ -460,30 +460,41 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
         .select()
         .single();
 
-      // Se o erro for sobre colunas faltantes (tokens), tenta novamente sem elas
-      if (error && (error.message?.includes('completion_tokens') || error.message?.includes('prompt_tokens') || error.message?.includes('total_tokens'))) {
-        console.warn('⚠️ Colunas de tokens não encontradas, tentando inserir sem elas');
-        const insertDataWithoutTokens = {
-          user_id: authUser.id,
-          conversation_id: conversationIdForDB,
-          role,
-          content: messageWithConversation.content,
-          timestamp: messageWithConversation.timestamp.toISOString(),
-        };
+      // Se o erro for sobre colunas faltantes, mostra mensagem clara
+      if (error && error.code === 'PGRST204') {
+        const missingColumn = error.message?.match(/'(\w+)'/)?.[1];
+        console.error('❌ COLUNA FALTANTE NA TABELA:', missingColumn);
+        console.error('📋 Execute o script SQL: CRIAR_OU_ATUALIZAR_CHAT_MESSAGES.sql no Supabase');
+        console.error('❌ Erro completo:', error);
         
-        const retryResult = await supabase
-          .from('chat_messages')
-          .insert(insertDataWithoutTokens)
-          .select()
-          .single();
-        
-        if (retryResult.error) {
-          console.error('❌ Erro ao salvar mensagem (tentativa sem tokens):', retryResult.error);
-          throw retryResult.error;
+        // Se for coluna de tokens, tenta sem elas
+        if (missingColumn && (missingColumn.includes('token') || missingColumn === 'completion_tokens' || missingColumn === 'prompt_tokens' || missingColumn === 'total_tokens')) {
+          console.warn('⚠️ Tentando inserir sem colunas de tokens');
+          const insertDataWithoutTokens = {
+            user_id: authUser.id,
+            conversation_id: conversationIdForDB,
+            role,
+            content: messageWithConversation.content,
+            timestamp: messageWithConversation.timestamp.toISOString(),
+          };
+          
+          const retryResult = await supabase
+            .from('chat_messages')
+            .insert(insertDataWithoutTokens)
+            .select()
+            .single();
+          
+          if (retryResult.error) {
+            console.error('❌ Erro ao salvar mensagem (tentativa sem tokens):', retryResult.error);
+            throw retryResult.error;
+          }
+          
+          data = retryResult.data;
+          error = null;
+        } else {
+          // Para outras colunas faltantes (como 'role'), não há fallback
+          throw error;
         }
-        
-        data = retryResult.data;
-        error = null;
       } else if (error) {
         console.error('❌ Erro ao salvar mensagem no Supabase:', {
           error,
