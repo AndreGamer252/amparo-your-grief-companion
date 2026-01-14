@@ -73,6 +73,7 @@ export async function register(data: RegisterData): Promise<AuthResponse> {
     const authUserRaw = signUpData.user;
 
     // Cria/atualiza registro na tabela public.users vinculada ao auth.users
+    // NOTA: Se as colunas de tokens não existirem, execute MIGRACAO_COLUNAS_USERS.sql no Supabase
     const userData: any = {
       id: authUserRaw.id,
       email: authUserRaw.email?.toLowerCase() || data.email.toLowerCase(),
@@ -80,16 +81,6 @@ export async function register(data: RegisterData): Promise<AuthResponse> {
       subscription_active: false,
       profile_data: {},
     };
-
-    // Adiciona colunas de tokens apenas se existirem (evita erro se não foram criadas ainda)
-    // Execute MIGRACAO_COLUNAS_USERS.sql no Supabase para adicionar essas colunas
-    try {
-      userData.total_tokens_used = 0;
-      userData.input_tokens_used = 0;
-      userData.output_tokens_used = 0;
-    } catch {
-      // Ignora se as colunas não existirem
-    }
 
     const { data: userRow, error: userError } = await supabase
       .from('users')
