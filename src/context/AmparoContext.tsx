@@ -211,6 +211,18 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
             );
           }
 
+          // Verifica sessão antes de carregar mensagens
+          const { data: sessionCheck, error: sessionCheckError } = await supabase.auth.getSession();
+          if (sessionCheckError || !sessionCheck?.session) {
+            console.error('❌ Sessão não encontrada ao carregar mensagens:', sessionCheckError);
+            setMessages([]);
+            const fresh = generateConversationId();
+            setActiveConversationIdState(fresh);
+            return;
+          }
+
+          console.log('🔍 Carregando mensagens para usuário:', authUser.id);
+
           // Carrega mensagens do chat
           const { data: messagesData, error: messagesError } = await supabase
             .from('chat_messages')
@@ -218,7 +230,23 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
             .eq('user_id', authUser.id)
             .order('timestamp', { ascending: true });
 
-          if (!messagesError && messagesData && messagesData.length > 0) {
+          if (messagesError) {
+            console.error('❌ Erro ao carregar mensagens:', {
+              error: messagesError,
+              code: messagesError.code,
+              message: messagesError.message,
+              details: messagesError.details,
+              hint: messagesError.hint,
+              userId: authUser.id,
+            });
+            const fresh = generateConversationId();
+            setActiveConversationIdState(fresh);
+            setMessages([]);
+            return;
+          }
+
+          if (messagesData && messagesData.length > 0) {
+            console.log('📥 Mensagens encontradas no banco:', messagesData.length);
             const mapped = messagesData.map((msg: any) => ({
               id: msg.id,
               content: msg.content,
@@ -234,14 +262,13 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
             const lastMessage = mapped[mapped.length - 1];
             const lastConversationId = lastMessage?.conversationId || LEGACY_CONVERSATION_ID;
             setActiveConversationIdState(lastConversationId);
-            console.log('✅ Mensagens carregadas:', mapped.length, 'Conversa ativa:', lastConversationId);
+            console.log('✅ Mensagens carregadas:', {
+              total: mapped.length,
+              conversaAtiva: lastConversationId,
+              conversas: [...new Set(mapped.map(m => m.conversationId))],
+            });
           } else {
-            // Se não há mensagens ou erro, cria uma nova conversa
-            if (messagesError) {
-              console.error('Erro ao carregar mensagens:', messagesError);
-            } else {
-              console.log('ℹ️ Nenhuma mensagem encontrada, criando nova conversa');
-            }
+            console.log('ℹ️ Nenhuma mensagem encontrada no banco, criando nova conversa');
             const fresh = generateConversationId();
             setActiveConversationIdState(fresh);
             setMessages([]);
@@ -371,45 +398,89 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
     setMessages((prev) => [...prev, messageWithConversation]);
 
     if (!authUser?.id || !supabase) {
-      console.warn('Usuário não autenticado ou Supabase não configurado - mensagem não será salva');
+      console.warn('⚠️ Usuário não autenticado ou Supabase não configurado - mensagem não será salva', {
+        authUser: authUser?.id,
+        supabase: !!supabase,
+      });
       return;
     }
 
     try {
+      // Verifica se a sessão do Supabase está ativa
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData?.session) {
+        console.error('❌ Sessão do Supabase não encontrada:', sessionError);
+        console.error('AuthUser ID:', authUser.id);
+        console.error('Session:', sessionData);
+        return;
+      }
+
+      console.log('🔍 Verificando autenticação antes de salvar:', {
+        userId: authUser.id,
+        sessionUserId: sessionData.session.user.id,
+        match: authUser.id === sessionData.session.user.id,
+      });
+
       // Converte 'sender' para 'role' (user -> user, amparo -> assistant)
       const role = message.sender === 'user' ? 'user' : 'assistant';
       
       // Salva conversation_id no banco (null apenas para legacy)
       const conversationIdForDB = finalConversationId === LEGACY_CONVERSATION_ID ? null : finalConversationId;
       
+      const insertData = {
+        user_id: authUser.id,
+        conversation_id: conversationIdForDB,
+        role,
+        content: messageWithConversation.content,
+        timestamp: messageWithConversation.timestamp.toISOString(),
+        prompt_tokens: tokens?.prompt_tokens || 0,
+        completion_tokens: tokens?.completion_tokens || 0,
+        total_tokens: tokens?.total_tokens || 0,
+      };
+
+      console.log('💾 Tentando salvar mensagem:', {
+        ...insertData,
+        content: insertData.content.substring(0, 50) + '...',
+      });
+
       const { data, error } = await supabase
         .from('chat_messages')
-        .insert({
-          user_id: authUser.id,
-          conversation_id: conversationIdForDB,
-          role,
-          content: messageWithConversation.content,
-          timestamp: messageWithConversation.timestamp.toISOString(),
-          prompt_tokens: tokens?.prompt_tokens || 0,
-          completion_tokens: tokens?.completion_tokens || 0,
-          total_tokens: tokens?.total_tokens || 0,
-        })
+        .insert(insertData)
         .select()
         .single();
 
       if (error) {
-        console.error('❌ Erro ao salvar mensagem no Supabase:', error);
+        console.error('❌ Erro ao salvar mensagem no Supabase:', {
+          error,
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          userId: authUser.id,
+          sessionUserId: sessionData.session.user.id,
+        });
         throw error;
       }
 
-      console.log('✅ Mensagem salva no banco:', data.id, 'Conversa:', conversationIdForDB);
+      console.log('✅ Mensagem salva no banco:', {
+        id: data.id,
+        conversationId: conversationIdForDB,
+        role,
+        timestamp: data.timestamp,
+      });
 
       // Atualiza a mensagem no estado local com o ID do banco
       setMessages((prev) =>
         prev.map((msg) => (msg.id === message.id ? { ...msg, id: data.id } : msg))
       );
-    } catch (error) {
-      console.error('Erro ao salvar mensagem no Supabase:', error);
+    } catch (error: any) {
+      console.error('❌ Erro completo ao salvar mensagem:', {
+        error,
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+      });
       // Mensagem já está no estado local, apenas loga o erro
     }
   };
