@@ -360,6 +360,28 @@ const saveJourneyProgress = async (
 
 ---
 
+## 🧵 Atualização (Chat): múltiplas conversas + botão “Nova conversa”
+
+Para manter o histórico e permitir iniciar uma **nova conversa sem apagar as antigas**, o app usa um `conversation_id` nas mensagens.
+
+### SQL (produção / banco já existente)
+
+Execute no Supabase SQL Editor:
+
+```sql
+ALTER TABLE public.chat_messages
+  ADD COLUMN IF NOT EXISTS conversation_id UUID;
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_id
+  ON public.chat_messages(conversation_id);
+```
+
+### Observação
+
+- Mensagens antigas ficam com `conversation_id = NULL` e aparecem como **“Histórico anterior”** no seletor.
+
+---
+
 ## 🔄 Estratégia de Migração
 
 ### Fase 1: Preparação

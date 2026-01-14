@@ -1,12 +1,19 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, Sparkles, AlertCircle } from 'lucide-react';
+import { Send, Mic, Sparkles, AlertCircle, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAmparo } from '@/context/AmparoContext';
 import type { ChatMessage } from '@/types/amparo';
 import { chatWithAmparo, convertMessagesToAPIFormat } from '@/lib/openai';
 import { toast } from 'sonner';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 /**
  * Detecta sinais de risco na mensagem do usuário
@@ -38,11 +45,34 @@ const conversationStarters = [
 ];
 
 export function Chat() {
-  const { messages, addMessage, user, setSosOpen, authUser } = useAmparo();
+  const { messages, addMessage, user, setSosOpen, authUser, activeConversationId, setActiveConversationId, startNewConversation } = useAmparo();
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const conversations = useMemo(() => {
+    const byId = new Map<string, { id: string; firstAt: Date; lastAt: Date; preview: string }>();
+    for (const m of messages) {
+      const id = m.conversationId || 'legacy';
+      const existing = byId.get(id);
+      if (!existing) {
+        byId.set(id, { id, firstAt: m.timestamp, lastAt: m.timestamp, preview: m.content });
+      } else {
+        if (m.timestamp < existing.firstAt) existing.firstAt = m.timestamp;
+        if (m.timestamp > existing.lastAt) {
+          existing.lastAt = m.timestamp;
+          existing.preview = m.content;
+        }
+      }
+    }
+    return Array.from(byId.values()).sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime());
+  }, [messages]);
+
+  const currentMessages = useMemo(() => {
+    const currentId = activeConversationId || 'legacy';
+    return messages.filter((m) => (m.conversationId || 'legacy') === currentId);
+  }, [messages, activeConversationId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -50,7 +80,7 @@ export function Chat() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [currentMessages]);
 
   const sendMessage = async (content: string) => {
     if (!content.trim()) return;
@@ -107,7 +137,7 @@ export function Chat() {
 
     try {
       // Converte mensagens para o formato da API
-      const apiMessages = convertMessagesToAPIFormat(messages);
+      const apiMessages = convertMessagesToAPIFormat(currentMessages);
 
       // Adiciona a nova mensagem do usuário
       apiMessages.push({
@@ -179,13 +209,50 @@ export function Chat() {
       <div className="flex flex-col h-[calc(100vh-180px)] lg:h-[calc(100vh-80px)] max-w-2xl mx-auto">
         {/* Chat Header */}
         <div className="px-4 lg:px-6 py-4 border-b border-border/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-serenity flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-serenity-600" />
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-2xl bg-serenity flex items-center justify-center shrink-0">
+                <Sparkles className="w-5 h-5 text-serenity-600" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="font-display font-semibold text-foreground">IA Acolhedora</h2>
+                <p className="text-xs text-muted-foreground">Sempre disponível para você</p>
+              </div>
             </div>
-            <div>
-              <h2 className="font-display font-semibold text-foreground">IA Acolhedora</h2>
-              <p className="text-xs text-muted-foreground">Sempre disponível para você</p>
+
+            <div className="flex items-center gap-2">
+              {conversations.length > 0 && (
+                <div className="hidden sm:block">
+                  <Select
+                    value={activeConversationId || 'legacy'}
+                    onValueChange={(v) => setActiveConversationId(v)}
+                  >
+                    <SelectTrigger className="h-9 w-[220px] rounded-2xl">
+                      <SelectValue placeholder="Escolher conversa" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {conversations.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.id === 'legacy'
+                            ? 'Histórico anterior'
+                            : `Conversa • ${c.lastAt.toLocaleDateString()}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => startNewConversation()}
+                className="rounded-2xl"
+              >
+                <Plus className="w-4 h-4" />
+                Nova conversa
+              </Button>
             </div>
           </div>
         </div>
@@ -206,7 +273,7 @@ export function Chat() {
             </motion.div>
           )}
 
-          {messages.length === 0 ? (
+          {currentMessages.length === 0 ? (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -241,7 +308,7 @@ export function Chat() {
           ) : (
             <>
               <AnimatePresence>
-                {messages.map((message, index) => (
+                {currentMessages.map((message, index) => (
                   <motion.div
                     key={message.id}
                     initial={{ opacity: 0, y: 10 }}

@@ -100,6 +100,29 @@ export function Onboarding() {
     return option?.label.toLowerCase() || 'essa pessoa';
   };
 
+  const renderSkip = () => {
+    // Passos opcionais: 3 a 7
+    if (step < 3) return null;
+    const nextLabel = step === totalSteps ? 'Pular e começar' : 'Pular pergunta';
+    const onSkip = () => {
+      if (step === totalSteps) return handleComplete();
+      setStep((prev) => Math.min(totalSteps, prev + 1));
+    };
+
+    return (
+      <div className="flex justify-end">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onSkip}
+          className="text-muted-foreground"
+        >
+          {nextLabel}
+        </Button>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-warmth flex items-center justify-center p-4">
       <motion.div
@@ -269,6 +292,7 @@ export function Onboarding() {
                   transition={{ duration: 0.4 }}
                   className="space-y-6"
                 >
+                  {renderSkip()}
                   <div className="text-center">
                     <h2 className="font-display text-xl font-semibold text-foreground">
                       Qual era o nome {getRelationshipLabel()}?
@@ -320,6 +344,7 @@ export function Onboarding() {
                   transition={{ duration: 0.4 }}
                   className="space-y-6"
                 >
+                  {renderSkip()}
                   <div className="text-center">
                     <h2 className="font-display text-xl font-semibold text-foreground">
                       Há quanto tempo você perdeu {getRelationshipLabel()}?
@@ -376,6 +401,7 @@ export function Onboarding() {
                   transition={{ duration: 0.4 }}
                   className="space-y-6"
                 >
+                  {renderSkip()}
                   <div className="text-center">
                     <h2 className="font-display text-xl font-semibold text-foreground">
                       Como era a relação entre vocês?
@@ -426,6 +452,7 @@ export function Onboarding() {
                   transition={{ duration: 0.4 }}
                   className="space-y-6"
                 >
+                  {renderSkip()}
                   <div className="text-center">
                     <h2 className="font-display text-xl font-semibold text-foreground">
                       Conte-me sobre {lovedOneName || getRelationshipLabel()}
@@ -476,6 +503,7 @@ export function Onboarding() {
                   transition={{ duration: 0.4 }}
                   className="space-y-6"
                 >
+                  {renderSkip()}
                   <div className="text-center">
                     <h2 className="font-display text-xl font-semibold text-foreground">
                       Como você está se sentindo agora?

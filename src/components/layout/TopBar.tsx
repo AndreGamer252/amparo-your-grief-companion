@@ -1,7 +1,9 @@
 import { useAmparo } from '@/context/AmparoContext';
+import { useNavigate } from 'react-router-dom';
 
 export function TopBar() {
   const { user } = useAmparo();
+  const navigate = useNavigate();
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -21,11 +23,16 @@ export function TopBar() {
             </h1>
           )}
         </div>
-        <div className="w-10 h-10 rounded-2xl bg-serenity flex items-center justify-center">
+        <button
+          type="button"
+          onClick={() => navigate('/settings')}
+          aria-label="Abrir configurações da conta"
+          className="w-10 h-10 rounded-2xl bg-serenity flex items-center justify-center"
+        >
           <span className="font-display text-serenity-600 font-semibold">
             {user?.name?.[0] || 'A'}
           </span>
-        </div>
+        </button>
       </div>
     </header>
   );

@@ -21,6 +21,13 @@ import {
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAmparo } from '@/context/AmparoContext';
 import type { MoodLevel } from '@/types/amparo';
@@ -186,7 +193,27 @@ export function Dashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent className="relative">
-              <div className="flex justify-between gap-2">
+              {/* Mobile: dropdown com rótulos (mais acessível que só ícones) */}
+              <div className="sm:hidden">
+                <Select
+                  value={selectedMood ? String(selectedMood) : undefined}
+                  onValueChange={(value) => handleMoodSelect(Number(value) as MoodLevel)}
+                >
+                  <SelectTrigger className="h-12 rounded-2xl">
+                    <SelectValue placeholder="Escolha como você está se sentindo hoje" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {moodIcons.map(({ level, label }) => (
+                      <SelectItem key={level} value={String(level)}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Desktop / tablets: botões com ícones */}
+              <div className="hidden sm:flex justify-between gap-2">
                 {moodIcons.map(({ level, icon: Icon, label, color }) => (
                   <motion.button
                     key={level}
@@ -200,7 +227,7 @@ export function Dashboard() {
                     }`}
                   >
                     <Icon className={`w-6 h-6 ${selectedMood === level ? 'text-primary-foreground' : color}`} />
-                    <span className="text-xs font-medium hidden sm:block">{label}</span>
+                    <span className="text-xs font-medium">{label}</span>
                   </motion.button>
                 ))}
               </div>

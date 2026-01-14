@@ -122,7 +122,7 @@ export function SosModal() {
                         times: [0, 0.25, 0.75, 1],
                       }}
                     >
-                      Inspire
+                      Expire
                     </motion.span>
                   </motion.span>
                 </motion.div>

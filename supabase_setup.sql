@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS public.check_ins (
 CREATE TABLE IF NOT EXISTS public.chat_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
+  conversation_id UUID,
   role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
   content TEXT NOT NULL,
   timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
@@ -72,6 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_memories_created_at ON public.memories(created_at
 CREATE INDEX IF NOT EXISTS idx_check_ins_user_id ON public.check_ins(user_id);
 CREATE INDEX IF NOT EXISTS idx_check_ins_date ON public.check_ins(date);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_user_id ON public.chat_messages(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_id ON public.chat_messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON public.chat_messages(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_journey_progress_user_id ON public.journey_progress(user_id);
 CREATE INDEX IF NOT EXISTS idx_journey_progress_module_id ON public.journey_progress(module_id);

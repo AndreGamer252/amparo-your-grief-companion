@@ -16,6 +16,9 @@ interface AmparoContextType {
   updateCheckIn: (date: string, mood: MoodLevel) => void;
   messages: ChatMessage[];
   addMessage: (message: ChatMessage, tokens?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }) => Promise<void>;
+  activeConversationId: string | null;
+  setActiveConversationId: (conversationId: string) => void;
+  startNewConversation: () => string;
   memories: Memory[];
   addMemory: (memory: Memory) => void;
   updateMemory: (id: string, updates: Partial<Memory>) => void;
@@ -34,14 +37,49 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
   const [todayMood, setTodayMood] = useState<MoodLevel | null>(null);
   const [checkIns, setCheckIns] = useState<DailyCheckIn[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [sosOpen, setSosOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  const LEGACY_CONVERSATION_ID = 'legacy';
+  const getConversationStorageKey = (userId: string) => `amparo_active_conversation:${userId}`;
+  const generateConversationId = () => {
+    try {
+      // Navegadores modernos
+      if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+        return crypto.randomUUID();
+      }
+    } catch {
+      // ignore
+    }
+    // Fallback simples
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  };
+
+  const setActiveConversationId = (conversationId: string) => {
+    setActiveConversationIdState(conversationId);
+    if (authUser?.id) {
+      localStorage.setItem(getConversationStorageKey(authUser.id), conversationId);
+    }
+  };
+
+  const startNewConversation = () => {
+    const newId = generateConversationId();
+    setActiveConversationId(newId);
+    return newId;
+  };
 
   // Carrega dados do Supabase quando o usuário está autenticado
   useEffect(() => {
     const loadData = async () => {
       if (!authUser?.id) {
+        // Limpa dados sensíveis ao deslogar
+        setUserState(null);
+        setCheckIns([]);
+        setMemories([]);
+        setMessages([]);
+        setActiveConversationIdState(null);
         setIsLoading(false);
         return;
       }
@@ -118,14 +156,31 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
             .order('timestamp', { ascending: true });
 
           if (!messagesError && messagesData) {
-            setMessages(
-              messagesData.map((msg) => ({
-                id: msg.id,
-                content: msg.content,
-                sender: msg.role === 'user' ? 'user' : 'amparo',
-                timestamp: new Date(msg.timestamp),
-              }))
-            );
+            const mapped = messagesData.map((msg: any) => ({
+              id: msg.id,
+              content: msg.content,
+              sender: msg.role === 'user' ? 'user' : 'amparo',
+              timestamp: new Date(msg.timestamp),
+              conversationId: msg.conversation_id || LEGACY_CONVERSATION_ID,
+            })) as ChatMessage[];
+
+            setMessages(mapped);
+
+            // Define conversa ativa: localStorage > última conversa existente > nova conversa vazia
+            const stored = localStorage.getItem(getConversationStorageKey(authUser.id));
+            const conversationIds = Array.from(new Set(mapped.map((m) => m.conversationId || LEGACY_CONVERSATION_ID)));
+            if (stored && conversationIds.includes(stored)) {
+              setActiveConversationIdState(stored);
+            } else if (conversationIds.length > 0) {
+              // Pega a conversa da mensagem mais recente
+              const last = mapped[mapped.length - 1]?.conversationId || LEGACY_CONVERSATION_ID;
+              setActiveConversationIdState(last);
+              localStorage.setItem(getConversationStorageKey(authUser.id), last);
+            } else {
+              const fresh = generateConversationId();
+              setActiveConversationIdState(fresh);
+              localStorage.setItem(getConversationStorageKey(authUser.id), fresh);
+            }
           }
         } else {
           console.error('Supabase não está configurado');
@@ -238,7 +293,11 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
 
   const addMessage = async (message: ChatMessage, tokens?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }) => {
     // Sempre adiciona ao estado local primeiro para exibição imediata
-    setMessages((prev) => [...prev, message]);
+    const messageWithConversation: ChatMessage = {
+      ...message,
+      conversationId: message.conversationId || activeConversationId || LEGACY_CONVERSATION_ID,
+    };
+    setMessages((prev) => [...prev, messageWithConversation]);
 
     if (!authUser?.id || !supabase) {
       console.warn('Usuário não autenticado ou Supabase não configurado - mensagem não será salva');
@@ -253,9 +312,10 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
         .from('chat_messages')
         .insert({
           user_id: authUser.id,
+          conversation_id: messageWithConversation.conversationId === LEGACY_CONVERSATION_ID ? null : messageWithConversation.conversationId,
           role,
-          content: message.content,
-          timestamp: message.timestamp.toISOString(),
+          content: messageWithConversation.content,
+          timestamp: messageWithConversation.timestamp.toISOString(),
           prompt_tokens: tokens?.prompt_tokens || 0,
           completion_tokens: tokens?.completion_tokens || 0,
           total_tokens: tokens?.total_tokens || 0,
@@ -379,6 +439,9 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
         updateCheckIn,
         messages,
         addMessage,
+        activeConversationId,
+        setActiveConversationId,
+        startNewConversation,
         memories,
         addMemory,
         updateMemory,

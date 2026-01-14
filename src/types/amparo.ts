@@ -24,6 +24,7 @@ export interface ChatMessage {
   content: string;
   sender: 'user' | 'amparo';
   timestamp: Date;
+  conversationId?: string;
 }
 
 export interface Memory {
