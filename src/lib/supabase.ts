@@ -20,11 +20,11 @@ export interface Database {
           id: string;
           email: string;
           name: string;
-          password_hash: string;
           created_at: string;
           last_login_at: string | null;
           subscription_active: boolean;
           subscription_expires_at: string | null;
+          total_tokens_used: number;
           input_tokens_used: number;
           output_tokens_used: number;
           token_limit: number | null;
@@ -34,11 +34,11 @@ export interface Database {
           id?: string;
           email: string;
           name: string;
-          password_hash: string;
           created_at?: string;
           last_login_at?: string | null;
           subscription_active?: boolean;
           subscription_expires_at?: string | null;
+          total_tokens_used?: number;
           input_tokens_used?: number;
           output_tokens_used?: number;
           token_limit?: number | null;
@@ -48,11 +48,11 @@ export interface Database {
           id?: string;
           email?: string;
           name?: string;
-          password_hash?: string;
           created_at?: string;
           last_login_at?: string | null;
           subscription_active?: boolean;
           subscription_expires_at?: string | null;
+          total_tokens_used?: number;
           input_tokens_used?: number;
           output_tokens_used?: number;
           token_limit?: number | null;
@@ -121,6 +121,7 @@ export interface Database {
         Row: {
           id: string;
           user_id: string;
+          conversation_id: string | null;
           role: 'user' | 'assistant';
           content: string;
           timestamp: string;
@@ -131,6 +132,7 @@ export interface Database {
         Insert: {
           id?: string;
           user_id: string;
+          conversation_id?: string | null;
           role: 'user' | 'assistant';
           content: string;
           timestamp?: string;
@@ -141,6 +143,7 @@ export interface Database {
         Update: {
           id?: string;
           user_id?: string;
+          conversation_id?: string | null;
           role?: 'user' | 'assistant';
           content?: string;
           timestamp?: string;

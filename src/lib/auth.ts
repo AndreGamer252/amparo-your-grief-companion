@@ -11,22 +11,6 @@ const USERS_STORAGE_KEY = 'amparo_users';
 const SETTINGS_STORAGE_KEY = 'amparo_settings';
 
 // ============================================
-// Funções auxiliares para hash de senha
-// ============================================
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  const passwordHash = await hashPassword(password);
-  return passwordHash === hash;
-}
-
-// ============================================
 // Fallback: localStorage (quando Supabase não está disponível)
 // ============================================
 function getStoredUsers(): Map<string, { password: string; user: AuthUser }> {
@@ -83,57 +67,67 @@ export async function register(data: RegisterData): Promise<AuthResponse> {
     return { success: false, error: 'As senhas não coincidem' };
   }
 
-  // Usa Supabase se disponível
+  // Usa Supabase Auth se disponível
   if (supabase) {
     try {
-      // Hash da senha
-      const passwordHash = await hashPassword(data.password);
+      // Cria usuário no Supabase Auth (auth.users)
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: data.email.toLowerCase(),
+        password: data.password,
+        options: {
+          data: {
+            name: data.name.trim(),
+          },
+        },
+      });
 
-      // Verifica se o email já existe
-      const { data: existingUser } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', data.email.toLowerCase())
-        .single();
-
-      if (existingUser) {
-        return { success: false, error: 'Este email já está cadastrado' };
+      if (signUpError || !signUpData.user) {
+        console.error('Erro ao registrar no Supabase Auth:', signUpError);
+        return { success: false, error: 'Erro ao criar conta. Tente novamente.' };
       }
 
-      // Cria novo usuário no Supabase
-      const { data: newUser, error } = await supabase
+      const authUserRaw = signUpData.user;
+
+      // Cria/atualiza registro na tabela public.users vinculada ao auth.users
+      const { data: userRow, error: userError } = await supabase
         .from('users')
-        .insert({
-          email: data.email.toLowerCase(),
-          name: data.name.trim(),
-          password_hash: passwordHash,
-          subscription_active: false,
-          input_tokens_used: 0,
-          output_tokens_used: 0,
-          profile_data: {},
-        })
+        .upsert(
+          {
+            id: authUserRaw.id,
+            email: authUserRaw.email?.toLowerCase() || data.email.toLowerCase(),
+            name: data.name.trim(),
+            subscription_active: false,
+            total_tokens_used: 0,
+            input_tokens_used: 0,
+            output_tokens_used: 0,
+            profile_data: {},
+          },
+          { onConflict: 'id' },
+        )
         .select()
         .single();
 
-      if (error) {
-        console.error('Erro ao registrar no Supabase:', error);
+      if (userError || !userRow) {
+        console.error('Erro ao criar usuário em public.users:', userError);
         return { success: false, error: 'Erro ao criar conta. Tente novamente.' };
       }
 
       const authUser: AuthUser = {
-        id: newUser.id,
-        email: newUser.email,
-        name: newUser.name,
-        createdAt: newUser.created_at,
-        subscriptionActive: newUser.subscription_active,
-        subscriptionExpiresAt: newUser.subscription_expires_at || undefined,
-        inputTokensUsed: newUser.input_tokens_used,
-        outputTokensUsed: newUser.output_tokens_used,
-        tokenLimit: newUser.token_limit || undefined,
+        id: userRow.id,
+        email: userRow.email,
+        name: userRow.name,
+        createdAt: userRow.created_at,
+        lastLoginAt: userRow.last_login_at || undefined,
+        subscriptionActive: userRow.subscription_active,
+        subscriptionExpiresAt: userRow.subscription_expires_at || undefined,
+        totalTokensUsed: userRow.total_tokens_used || 0,
+        inputTokensUsed: userRow.input_tokens_used || 0,
+        outputTokensUsed: userRow.output_tokens_used || 0,
+        tokenLimit: userRow.token_limit || undefined,
       };
 
-      // Salva no localStorage para sessão
-      const token = `token_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      // Salva no localStorage para sessão (espelha o usuário autenticado)
+      const token = signUpData.session?.access_token || '';
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ user: authUser, token }));
 
       return {
@@ -189,47 +183,66 @@ export async function login(credentials: LoginCredentials): Promise<AuthResponse
     return { success: false, error: 'Senha é obrigatória' };
   }
 
-  // Usa Supabase se disponível
+  // Usa Supabase Auth se disponível
   if (supabase) {
     try {
-      // Busca usuário no Supabase
-      const { data: user, error } = await supabase
+      // Faz login no Supabase Auth
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email: credentials.email.toLowerCase(),
+        password: credentials.password,
+      });
+
+      if (signInError || !signInData.user) {
+        return { success: false, error: 'Email ou senha incorretos' };
+      }
+
+      const authUserRaw = signInData.user;
+
+      // Garante que exista um registro correspondente em public.users
+      const { data: userRow, error: userError } = await supabase
         .from('users')
-        .select('*')
-        .eq('email', credentials.email.toLowerCase())
+        .upsert(
+          {
+            id: authUserRaw.id,
+            email: authUserRaw.email?.toLowerCase() || credentials.email.toLowerCase(),
+            name: (authUserRaw.user_metadata as any)?.name || authUserRaw.email || credentials.email,
+          },
+          { onConflict: 'id' },
+        )
+        .select()
         .single();
 
-      if (error || !user) {
-        return { success: false, error: 'Email ou senha incorretos' };
+      if (userError || !userRow) {
+        console.error('Erro ao sincronizar usuário em public.users:', userError);
+        return { success: false, error: 'Erro ao fazer login. Tente novamente.' };
       }
 
-      // Verifica senha
-      const isValid = await verifyPassword(credentials.password, user.password_hash);
-      if (!isValid) {
-        return { success: false, error: 'Email ou senha incorretos' };
-      }
-
-      // Atualiza último login
-      await supabase
+      // Atualiza last_login_at
+      const { data: updatedUser } = await supabase
         .from('users')
         .update({ last_login_at: new Date().toISOString() })
-        .eq('id', user.id);
+        .eq('id', userRow.id)
+        .select()
+        .single();
+
+      const finalUser = updatedUser || userRow;
 
       const authUser: AuthUser = {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        createdAt: user.created_at,
-        lastLoginAt: user.last_login_at || undefined,
-        subscriptionActive: user.subscription_active,
-        subscriptionExpiresAt: user.subscription_expires_at || undefined,
-        inputTokensUsed: user.input_tokens_used,
-        outputTokensUsed: user.output_tokens_used,
-        tokenLimit: user.token_limit || undefined,
+        id: finalUser.id,
+        email: finalUser.email,
+        name: finalUser.name,
+        createdAt: finalUser.created_at,
+        lastLoginAt: finalUser.last_login_at || undefined,
+        subscriptionActive: finalUser.subscription_active,
+        subscriptionExpiresAt: finalUser.subscription_expires_at || undefined,
+        totalTokensUsed: finalUser.total_tokens_used || 0,
+        inputTokensUsed: finalUser.input_tokens_used || 0,
+        outputTokensUsed: finalUser.output_tokens_used || 0,
+        tokenLimit: finalUser.token_limit || undefined,
       };
 
       // Salva no localStorage para sessão
-      const token = `token_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const token = signInData.session?.access_token || '';
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ user: authUser, token }));
 
       return {
@@ -279,6 +292,11 @@ export async function login(credentials: LoginCredentials): Promise<AuthResponse
  */
 export function logout(): void {
   localStorage.removeItem(AUTH_STORAGE_KEY);
+  if (supabase) {
+    supabase.auth.signOut().catch((error) => {
+      console.error('Erro ao fazer logout do Supabase Auth:', error);
+    });
+  }
 }
 
 /**
@@ -349,9 +367,23 @@ export async function updateProfile(data: { name: string; email: string }): Prom
     return { success: false, error: 'Email inválido' };
   }
 
-  // Usa Supabase se disponível
+  // Usa Supabase Auth se disponível
   if (supabase) {
     try {
+      // Atualiza dados básicos no Supabase Auth (email, metadata)
+      const { error: authError } = await supabase.auth.updateUser({
+        email: data.email.toLowerCase(),
+        data: {
+          name: data.name.trim(),
+        },
+      });
+
+      if (authError) {
+        console.error('Erro ao atualizar usuário no Supabase Auth:', authError);
+        return { success: false, error: 'Erro ao atualizar perfil' };
+      }
+
+      // Atualiza registro em public.users
       const { data: updatedUser, error } = await supabase
         .from('users')
         .update({
@@ -362,8 +394,8 @@ export async function updateProfile(data: { name: string; email: string }): Prom
         .select()
         .single();
 
-      if (error) {
-        console.error('Erro ao atualizar perfil:', error);
+      if (error || !updatedUser) {
+        console.error('Erro ao atualizar perfil em public.users:', error);
         return { success: false, error: 'Erro ao atualizar perfil' };
       }
 
@@ -375,8 +407,9 @@ export async function updateProfile(data: { name: string; email: string }): Prom
         lastLoginAt: updatedUser.last_login_at || undefined,
         subscriptionActive: updatedUser.subscription_active,
         subscriptionExpiresAt: updatedUser.subscription_expires_at || undefined,
-        inputTokensUsed: updatedUser.input_tokens_used,
-        outputTokensUsed: updatedUser.output_tokens_used,
+        totalTokensUsed: updatedUser.total_tokens_used || 0,
+        inputTokensUsed: updatedUser.input_tokens_used || 0,
+        outputTokensUsed: updatedUser.output_tokens_used || 0,
         tokenLimit: updatedUser.token_limit || undefined,
       };
 
@@ -458,32 +491,22 @@ export async function changePassword(data: {
     return { success: false, error: 'As senhas não coincidem' };
   }
 
-  // Usa Supabase se disponível
+  // Usa Supabase Auth se disponível
   if (supabase) {
     try {
-      // Busca usuário para verificar senha atual
-      const { data: user, error: fetchError } = await supabase
-        .from('users')
-        .select('password_hash')
-        .eq('id', currentUser.id)
-        .single();
+      // Primeiro, valida a senha atual tentando um login silencioso
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: currentUser.email,
+        password: data.currentPassword,
+      });
 
-      if (fetchError || !user) {
-        return { success: false, error: 'Usuário não encontrado' };
-      }
-
-      // Verifica senha atual
-      const isValid = await verifyPassword(data.currentPassword, user.password_hash);
-      if (!isValid) {
+      if (signInError) {
         return { success: false, error: 'Senha atual incorreta' };
       }
 
-      // Atualiza senha
-      const newPasswordHash = await hashPassword(data.newPassword);
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ password_hash: newPasswordHash })
-        .eq('id', currentUser.id);
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: data.newPassword,
+      });
 
       if (updateError) {
         console.error('Erro ao alterar senha:', updateError);

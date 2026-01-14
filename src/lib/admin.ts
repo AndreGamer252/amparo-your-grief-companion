@@ -515,31 +515,13 @@ export async function changeUserPassword(
     return { success: false, error: 'A senha deve ter pelo menos 6 caracteres' };
   }
 
-  // Usa Supabase se disponível
+  // Com Supabase Auth, alterar senha de outros usuários requer chave de serviço no backend.
+  // No frontend, evitamos isso por segurança.
   if (supabase) {
-    try {
-      // Hash da senha
-      const encoder = new TextEncoder();
-      const data = encoder.encode(newPassword);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const passwordHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
-      const { error } = await supabase
-        .from('users')
-        .update({ password_hash: passwordHash })
-        .eq('id', userId);
-
-      if (error) {
-        console.error('Erro ao alterar senha:', error);
-        return { success: false, error: 'Erro ao alterar senha' };
-      }
-
-      return { success: true };
-    } catch (error) {
-      console.error('Erro ao alterar senha:', error);
-      // Fallback para localStorage
-    }
+    return {
+      success: false,
+      error: 'Alterar senha de usuários diretamente não é suportado com Supabase Auth no frontend.',
+    };
   }
 
   // Fallback: localStorage
