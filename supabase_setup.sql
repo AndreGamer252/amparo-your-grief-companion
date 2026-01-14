@@ -4,6 +4,8 @@
 -- ============================================
 
 -- Tabela de usuários (vinculada ao Supabase Auth)
+-- NOTA: Com Supabase Auth, as senhas são gerenciadas em auth.users,
+-- então password_hash não é necessário em public.users
 CREATE TABLE IF NOT EXISTS public.users (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT UNIQUE NOT NULL,
@@ -17,6 +19,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   output_tokens_used BIGINT DEFAULT 0 NOT NULL,
   token_limit BIGINT,
   profile_data JSONB DEFAULT '{}'::jsonb NOT NULL
+  -- password_hash removido: senhas são gerenciadas pelo Supabase Auth
 );
 
 -- Tabela de memórias
