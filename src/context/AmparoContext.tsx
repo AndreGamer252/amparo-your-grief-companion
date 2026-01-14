@@ -427,29 +427,64 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
       // Salva conversation_id no banco (null apenas para legacy)
       const conversationIdForDB = finalConversationId === LEGACY_CONVERSATION_ID ? null : finalConversationId;
       
-      const insertData = {
+      // Prepara dados para inserção (sem colunas de tokens se não existirem)
+      const insertData: any = {
         user_id: authUser.id,
         conversation_id: conversationIdForDB,
         role,
         content: messageWithConversation.content,
         timestamp: messageWithConversation.timestamp.toISOString(),
-        prompt_tokens: tokens?.prompt_tokens || 0,
-        completion_tokens: tokens?.completion_tokens || 0,
-        total_tokens: tokens?.total_tokens || 0,
       };
+
+      // Adiciona tokens apenas se fornecidos (colunas podem não existir na tabela)
+      if (tokens) {
+        if (tokens.prompt_tokens !== undefined) {
+          insertData.prompt_tokens = tokens.prompt_tokens;
+        }
+        if (tokens.completion_tokens !== undefined) {
+          insertData.completion_tokens = tokens.completion_tokens;
+        }
+        if (tokens.total_tokens !== undefined) {
+          insertData.total_tokens = tokens.total_tokens;
+        }
+      }
 
       console.log('💾 Tentando salvar mensagem:', {
         ...insertData,
         content: insertData.content.substring(0, 50) + '...',
       });
 
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('chat_messages')
         .insert(insertData)
         .select()
         .single();
 
-      if (error) {
+      // Se o erro for sobre colunas faltantes (tokens), tenta novamente sem elas
+      if (error && (error.message?.includes('completion_tokens') || error.message?.includes('prompt_tokens') || error.message?.includes('total_tokens'))) {
+        console.warn('⚠️ Colunas de tokens não encontradas, tentando inserir sem elas');
+        const insertDataWithoutTokens = {
+          user_id: authUser.id,
+          conversation_id: conversationIdForDB,
+          role,
+          content: messageWithConversation.content,
+          timestamp: messageWithConversation.timestamp.toISOString(),
+        };
+        
+        const retryResult = await supabase
+          .from('chat_messages')
+          .insert(insertDataWithoutTokens)
+          .select()
+          .single();
+        
+        if (retryResult.error) {
+          console.error('❌ Erro ao salvar mensagem (tentativa sem tokens):', retryResult.error);
+          throw retryResult.error;
+        }
+        
+        data = retryResult.data;
+        error = null;
+      } else if (error) {
         console.error('❌ Erro ao salvar mensagem no Supabase:', {
           error,
           code: error.code,
