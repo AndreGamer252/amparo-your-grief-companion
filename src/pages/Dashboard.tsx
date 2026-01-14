@@ -534,7 +534,7 @@ export function Dashboard() {
                 <p className="font-display font-semibold text-foreground text-xl mb-1">
                   {stats.totalMessages}
                 </p>
-                <p className="text-xs text-muted-foreground">Conversas com Amparo</p>
+                <p className="text-xs text-muted-foreground">Conversas com Ampara</p>
               </CardContent>
             </Card>
           </Link>

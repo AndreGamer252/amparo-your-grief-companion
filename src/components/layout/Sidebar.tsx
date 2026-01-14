@@ -18,10 +18,12 @@ export function Sidebar() {
     <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-card border-r border-border/50">
       {/* Logo */}
       <div className="flex items-center gap-3 px-6 py-8">
-        <div className="w-10 h-10 rounded-2xl bg-serenity flex items-center justify-center">
-          <Heart className="w-5 h-5 text-serenity-600" />
-        </div>
-        <span className="font-display text-xl font-semibold text-foreground">Amparo</span>
+        <img 
+          src="/logo_ampara.png" 
+          alt="Ampara" 
+          className="w-20 h-20 object-contain"
+        />
+        <span className="font-display text-xl font-semibold text-foreground">Ampara</span>
       </div>
 
       {/* Navigation */}

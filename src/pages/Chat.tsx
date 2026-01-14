@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Mic, Sparkles, AlertCircle, Plus } from 'lucide-react';
+import { Send, Sparkles, AlertCircle, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAmparo } from '@/context/AmparoContext';
@@ -411,14 +411,8 @@ export function Chat() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Escreva o que está sentindo..."
-                className="w-full px-5 py-4 rounded-3xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-gentle text-foreground placeholder:text-muted-foreground pr-12"
+                className="w-full px-5 py-4 rounded-3xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-gentle text-foreground placeholder:text-muted-foreground"
               />
-              <button
-                type="button"
-                className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-muted-foreground hover:text-primary transition-gentle"
-              >
-                <Mic className="w-5 h-5" />
-              </button>
             </div>
             <Button
               type="submit"

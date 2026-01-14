@@ -15,7 +15,7 @@ const buttonVariants = cva(
         secondary: "bg-secondary text-secondary-foreground hover:bg-muted rounded-2xl",
         ghost: "hover:bg-primary-soft hover:text-primary rounded-2xl",
         link: "text-primary underline-offset-4 hover:underline",
-        // Amparo-specific variants
+        // Ampara-specific variants
         serenity: "bg-serenity-100 text-serenity-600 hover:bg-serenity-200 rounded-3xl shadow-soft",
         warmth: "bg-warmth-100 text-foreground hover:bg-warmth-200 rounded-3xl border border-border",
         sos: "bg-coral text-white hover:bg-coral/90 rounded-3xl shadow-elevated font-semibold",

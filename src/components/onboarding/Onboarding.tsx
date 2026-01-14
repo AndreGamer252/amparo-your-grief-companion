@@ -161,12 +161,16 @@ export function Onboarding() {
                   className="space-y-6"
                 >
                   <div className="text-center space-y-4">
-                    <div className="w-16 h-16 mx-auto rounded-3xl bg-serenity flex items-center justify-center animate-breathe">
-                      <Heart className="w-8 h-8 text-serenity-600" />
+                    <div className="w-32 h-32 mx-auto flex items-center justify-center animate-breathe">
+                      <img 
+                        src="/logo_ampara.png" 
+                        alt="Ampara" 
+                        className="w-32 h-32 object-contain"
+                      />
                     </div>
                     <div>
                       <h1 className="font-display text-2xl font-semibold text-foreground">
-                        Bem-vindo ao Amparo
+                        Bem-vindo ao Ampara
                       </h1>
                       <p className="text-muted-foreground mt-2 leading-relaxed">
                         Olá, sinto muito que você esteja aqui, mas fico feliz em poder ajudar.
