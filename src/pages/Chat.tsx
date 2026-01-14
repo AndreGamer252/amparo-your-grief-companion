@@ -85,6 +85,25 @@ export function Chat() {
   const sendMessage = async (content: string) => {
     if (!content.trim()) return;
 
+    // Verifica limite de tokens antes de enviar
+    if (authUser?.tokenLimit && authUser.tokenLimit > 0) {
+      const totalUsed = authUser.totalTokensUsed || 0;
+      if (totalUsed >= authUser.tokenLimit) {
+        const limitMessage: ChatMessage = {
+          id: Date.now().toString(),
+          content: 'Sua conta excedeu o limite de mensagens. Aguarde até a renovação ou entre em contato com o suporte.',
+          sender: 'amparo',
+          timestamp: new Date(),
+        };
+        await addMessage(limitMessage);
+        toast.error('Limite de mensagens excedido', {
+          description: 'Sua conta atingiu o limite de mensagens. Entre em contato com o suporte.',
+          duration: 5000,
+        });
+        return;
+      }
+    }
+
     // Validação de tamanho da mensagem
     if (content.length > 2000) {
       toast.error('Mensagem muito longa', {
@@ -144,6 +163,39 @@ export function Chat() {
         role: 'user',
         content,
       });
+
+      // Verifica limite de tokens novamente antes de chamar a API (pode ter mudado)
+      if (authUser?.tokenLimit && authUser.tokenLimit > 0) {
+        // Busca dados atualizados do usuário do Supabase
+        const { supabase } = await import('@/lib/supabase');
+        if (supabase && authUser.id) {
+          const { data: updatedUser } = await supabase
+            .from('users')
+            .select('total_tokens_used, token_limit')
+            .eq('id', authUser.id)
+            .single();
+          
+          if (updatedUser) {
+            const totalUsed = (updatedUser as any).total_tokens_used || 0;
+            const tokenLimit = (updatedUser as any).token_limit;
+            
+            if (tokenLimit && tokenLimit > 0 && totalUsed >= tokenLimit) {
+              const limitMessage: ChatMessage = {
+                id: Date.now().toString(),
+                content: 'Sua conta excedeu o limite de mensagens. Aguarde até a renovação ou entre em contato com o suporte.',
+                sender: 'amparo',
+                timestamp: new Date(),
+              };
+              await addMessage(limitMessage);
+              toast.error('Limite de mensagens excedido', {
+                description: 'Sua conta atingiu o limite de mensagens. Entre em contato com o suporte.',
+                duration: 5000,
+              });
+              return;
+            }
+          }
+        }
+      }
 
       // Chama a API da OpenAI
       const response = await chatWithAmparo(apiMessages, {
@@ -209,26 +261,26 @@ export function Chat() {
       <div className="flex flex-col h-[calc(100vh-180px)] lg:h-[calc(100vh-80px)] max-w-2xl mx-auto">
         {/* Chat Header */}
         <div className="px-4 lg:px-6 py-4 border-b border-border/50">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0 flex-shrink-0">
               <div className="w-10 h-10 rounded-2xl bg-serenity flex items-center justify-center shrink-0">
                 <Sparkles className="w-5 h-5 text-serenity-600" />
               </div>
               <div className="min-w-0">
                 <h2 className="font-display font-semibold text-foreground">IA Acolhedora</h2>
-                <p className="text-xs text-muted-foreground">Sempre disponível para você</p>
+                <p className="text-xs text-muted-foreground hidden sm:block">Sempre disponível para você</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               {conversations.length > 0 && (
-                <div className="max-w-[220px]">
+                <div className="max-w-[140px] sm:max-w-[220px]">
                   <Select
                     value={activeConversationId || 'legacy'}
                     onValueChange={(v) => setActiveConversationId(v)}
                   >
-                    <SelectTrigger className="h-9 w-[180px] sm:w-[220px] rounded-2xl">
-                      <SelectValue placeholder="Escolher conversa" />
+                    <SelectTrigger className="h-9 w-[120px] sm:w-[180px] lg:w-[220px] rounded-2xl text-xs sm:text-sm">
+                      <SelectValue placeholder="Histórico" />
                     </SelectTrigger>
                     <SelectContent>
                       {conversations.map((c) => (
@@ -248,10 +300,11 @@ export function Chat() {
                 variant="outline"
                 size="sm"
                 onClick={() => startNewConversation()}
-                className="rounded-2xl"
+                className="rounded-2xl text-xs sm:text-sm"
               >
                 <Plus className="w-4 h-4" />
-                Nova conversa
+                <span className="hidden sm:inline">Nova conversa</span>
+                <span className="sm:hidden">Nova</span>
               </Button>
             </div>
           </div>

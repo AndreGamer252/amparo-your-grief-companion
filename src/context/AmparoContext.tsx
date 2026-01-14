@@ -257,14 +257,13 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
 
             setMessages(mapped);
 
-            // Define conversa ativa: última conversa existente (mais recente)
-            // Pega a conversa da mensagem mais recente (última mensagem no array ordenado por timestamp)
-            const lastMessage = mapped[mapped.length - 1];
-            const lastConversationId = lastMessage?.conversationId || LEGACY_CONVERSATION_ID;
-            setActiveConversationIdState(lastConversationId);
+            // Sempre cria uma nova conversa ao entrar na página do chat
+            // As conversas antigas ficam disponíveis no histórico
+            const fresh = generateConversationId();
+            setActiveConversationIdState(fresh);
             console.log('✅ Mensagens carregadas:', {
               total: mapped.length,
-              conversaAtiva: lastConversationId,
+              conversaAtiva: fresh,
               conversas: [...new Set(mapped.map(m => m.conversationId))],
             });
           } else {
