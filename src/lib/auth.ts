@@ -73,21 +73,27 @@ export async function register(data: RegisterData): Promise<AuthResponse> {
     const authUserRaw = signUpData.user;
 
     // Cria/atualiza registro na tabela public.users vinculada ao auth.users
+    const userData: any = {
+      id: authUserRaw.id,
+      email: authUserRaw.email?.toLowerCase() || data.email.toLowerCase(),
+      name: data.name.trim(),
+      subscription_active: false,
+      profile_data: {},
+    };
+
+    // Adiciona colunas de tokens apenas se existirem (evita erro se não foram criadas ainda)
+    // Execute MIGRACAO_COLUNAS_USERS.sql no Supabase para adicionar essas colunas
+    try {
+      userData.total_tokens_used = 0;
+      userData.input_tokens_used = 0;
+      userData.output_tokens_used = 0;
+    } catch {
+      // Ignora se as colunas não existirem
+    }
+
     const { data: userRow, error: userError } = await supabase
       .from('users')
-      .upsert(
-        {
-          id: authUserRaw.id,
-          email: authUserRaw.email?.toLowerCase() || data.email.toLowerCase(),
-          name: data.name.trim(),
-          subscription_active: false,
-          total_tokens_used: 0,
-          input_tokens_used: 0,
-          output_tokens_used: 0,
-          profile_data: {},
-        },
-        { onConflict: 'id' },
-      )
+      .upsert(userData, { onConflict: 'id' })
       .select()
       .single();
 
@@ -107,10 +113,10 @@ export async function register(data: RegisterData): Promise<AuthResponse> {
       lastLoginAt: userRow.last_login_at || undefined,
       subscriptionActive: userRow.subscription_active,
       subscriptionExpiresAt: userRow.subscription_expires_at || undefined,
-      totalTokensUsed: userRow.total_tokens_used || 0,
-      inputTokensUsed: userRow.input_tokens_used || 0,
-      outputTokensUsed: userRow.output_tokens_used || 0,
-      tokenLimit: userRow.token_limit || undefined,
+      totalTokensUsed: (userRow as any).total_tokens_used || 0,
+      inputTokensUsed: (userRow as any).input_tokens_used || 0,
+      outputTokensUsed: (userRow as any).output_tokens_used || 0,
+      tokenLimit: (userRow as any).token_limit || undefined,
     };
 
     return {
@@ -258,10 +264,10 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
       lastLoginAt: userRow.last_login_at || undefined,
       subscriptionActive: userRow.subscription_active,
       subscriptionExpiresAt: userRow.subscription_expires_at || undefined,
-      totalTokensUsed: userRow.total_tokens_used || 0,
-      inputTokensUsed: userRow.input_tokens_used || 0,
-      outputTokensUsed: userRow.output_tokens_used || 0,
-      tokenLimit: userRow.token_limit || undefined,
+      totalTokensUsed: (userRow as any).total_tokens_used || 0,
+      inputTokensUsed: (userRow as any).input_tokens_used || 0,
+      outputTokensUsed: (userRow as any).output_tokens_used || 0,
+      tokenLimit: (userRow as any).token_limit || undefined,
     };
   } catch (error) {
     console.error('Erro ao obter usuário atual:', error);
