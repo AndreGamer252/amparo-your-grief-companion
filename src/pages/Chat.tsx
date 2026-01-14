@@ -222,12 +222,12 @@ export function Chat() {
 
             <div className="flex items-center gap-2">
               {conversations.length > 0 && (
-                <div className="hidden sm:block">
+                <div className="max-w-[220px]">
                   <Select
                     value={activeConversationId || 'legacy'}
                     onValueChange={(v) => setActiveConversationId(v)}
                   >
-                    <SelectTrigger className="h-9 w-[220px] rounded-2xl">
+                    <SelectTrigger className="h-9 w-[180px] sm:w-[220px] rounded-2xl">
                       <SelectValue placeholder="Escolher conversa" />
                     </SelectTrigger>
                     <SelectContent>
