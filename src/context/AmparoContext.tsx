@@ -9,6 +9,7 @@ interface AmparoContextType {
   setUser: (user: UserProfile | null) => Promise<void>;
   authUser: AuthUser | null;
   setAuthUser: (user: AuthUser | null) => void;
+  isLoading: boolean;
   todayMood: MoodLevel | null;
   setTodayMood: (mood: MoodLevel) => void;
   checkIns: DailyCheckIn[];
@@ -68,40 +69,52 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
 
   // Sincroniza estado de auth com Supabase Auth (inclui recarregamentos de página)
   useEffect(() => {
-    if (!supabase) return;
+    if (!supabase) {
+      setIsLoading(false);
+      return;
+    }
 
     const hydrateAuthFromSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      const session = data.session;
-      if (session?.user) {
-        // Busca dados complementares em public.users
-        const { data: userRow, error: userError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
+      setIsLoading(true);
+      try {
+        const { data } = await supabase.auth.getSession();
+        const session = data.session;
+        if (session?.user) {
+          // Busca dados complementares em public.users
+          const { data: userRow, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
 
-        if (!userError && userRow) {
-          const hydrated: AuthUser = {
-            id: userRow.id,
-            email: userRow.email,
-            name: userRow.name,
-            createdAt: userRow.created_at,
-            lastLoginAt: userRow.last_login_at || undefined,
-            subscriptionActive: userRow.subscription_active,
-            subscriptionExpiresAt: userRow.subscription_expires_at || undefined,
-            totalTokensUsed: userRow.total_tokens_used || 0,
-            inputTokensUsed: userRow.input_tokens_used || 0,
-            outputTokensUsed: userRow.output_tokens_used || 0,
-            tokenLimit: userRow.token_limit || undefined,
-          };
-          setAuthUserState(hydrated);
-          return;
+          if (!userError && userRow) {
+            const hydrated: AuthUser = {
+              id: userRow.id,
+              email: userRow.email,
+              name: userRow.name,
+              createdAt: userRow.created_at,
+              lastLoginAt: userRow.last_login_at || undefined,
+              subscriptionActive: userRow.subscription_active,
+              subscriptionExpiresAt: userRow.subscription_expires_at || undefined,
+              totalTokensUsed: (userRow as any).total_tokens_used || 0,
+              inputTokensUsed: (userRow as any).input_tokens_used || 0,
+              outputTokensUsed: (userRow as any).output_tokens_used || 0,
+              tokenLimit: (userRow as any).token_limit || undefined,
+            };
+            setAuthUserState(hydrated);
+            setIsLoading(false);
+            return;
+          }
         }
-      }
 
-      // Se não há sessão, limpa estado
-      setAuthUserState(null);
+        // Se não há sessão, limpa estado
+        setAuthUserState(null);
+      } catch (error) {
+        console.error('Erro ao restaurar sessão:', error);
+        setAuthUserState(null);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     hydrateAuthFromSession();
@@ -111,6 +124,7 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
         hydrateAuthFromSession();
       } else {
         setAuthUserState(null);
+        setIsLoading(false);
       }
     });
 
@@ -215,16 +229,22 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
 
             setMessages(mapped);
 
-            // Define conversa ativa: última conversa existente > nova conversa vazia
-            const conversationIds = Array.from(new Set(mapped.map((m) => m.conversationId || LEGACY_CONVERSATION_ID)));
-            if (conversationIds.length > 0) {
-              // Pega a conversa da mensagem mais recente
-              const last = mapped[mapped.length - 1]?.conversationId || LEGACY_CONVERSATION_ID;
-              setActiveConversationIdState(last);
+            // Define conversa ativa: última conversa existente (mais recente) > nova conversa vazia
+            if (mapped.length > 0) {
+              // Pega a conversa da mensagem mais recente (última mensagem no array ordenado por timestamp)
+              const lastMessage = mapped[mapped.length - 1];
+              const lastConversationId = lastMessage?.conversationId || LEGACY_CONVERSATION_ID;
+              setActiveConversationIdState(lastConversationId);
             } else {
+              // Se não há mensagens, cria uma nova conversa
               const fresh = generateConversationId();
               setActiveConversationIdState(fresh);
             }
+          } else if (messagesError) {
+            console.error('Erro ao carregar mensagens:', messagesError);
+            // Mesmo com erro, cria uma nova conversa para não bloquear o chat
+            const fresh = generateConversationId();
+            setActiveConversationIdState(fresh);
           }
         } else {
           console.error('Supabase não está configurado');
@@ -476,6 +496,7 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
         setUser,
         authUser,
         setAuthUser,
+        isLoading,
         todayMood,
         setTodayMood,
         checkIns,
