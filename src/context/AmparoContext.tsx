@@ -218,7 +218,7 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
             .eq('user_id', authUser.id)
             .order('timestamp', { ascending: true });
 
-          if (!messagesError && messagesData) {
+          if (!messagesError && messagesData && messagesData.length > 0) {
             const mapped = messagesData.map((msg: any) => ({
               id: msg.id,
               content: msg.content,
@@ -229,22 +229,22 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
 
             setMessages(mapped);
 
-            // Define conversa ativa: última conversa existente (mais recente) > nova conversa vazia
-            if (mapped.length > 0) {
-              // Pega a conversa da mensagem mais recente (última mensagem no array ordenado por timestamp)
-              const lastMessage = mapped[mapped.length - 1];
-              const lastConversationId = lastMessage?.conversationId || LEGACY_CONVERSATION_ID;
-              setActiveConversationIdState(lastConversationId);
+            // Define conversa ativa: última conversa existente (mais recente)
+            // Pega a conversa da mensagem mais recente (última mensagem no array ordenado por timestamp)
+            const lastMessage = mapped[mapped.length - 1];
+            const lastConversationId = lastMessage?.conversationId || LEGACY_CONVERSATION_ID;
+            setActiveConversationIdState(lastConversationId);
+            console.log('✅ Mensagens carregadas:', mapped.length, 'Conversa ativa:', lastConversationId);
+          } else {
+            // Se não há mensagens ou erro, cria uma nova conversa
+            if (messagesError) {
+              console.error('Erro ao carregar mensagens:', messagesError);
             } else {
-              // Se não há mensagens, cria uma nova conversa
-              const fresh = generateConversationId();
-              setActiveConversationIdState(fresh);
+              console.log('ℹ️ Nenhuma mensagem encontrada, criando nova conversa');
             }
-          } else if (messagesError) {
-            console.error('Erro ao carregar mensagens:', messagesError);
-            // Mesmo com erro, cria uma nova conversa para não bloquear o chat
             const fresh = generateConversationId();
             setActiveConversationIdState(fresh);
+            setMessages([]);
           }
         } else {
           console.error('Supabase não está configurado');
@@ -356,10 +356,17 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
   };
 
   const addMessage = async (message: ChatMessage, tokens?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }) => {
+    // Garante que sempre há uma conversa ativa
+    if (!activeConversationId) {
+      const newId = generateConversationId();
+      setActiveConversationIdState(newId);
+    }
+
     // Sempre adiciona ao estado local primeiro para exibição imediata
+    const finalConversationId = message.conversationId || activeConversationId || LEGACY_CONVERSATION_ID;
     const messageWithConversation: ChatMessage = {
       ...message,
-      conversationId: message.conversationId || activeConversationId || LEGACY_CONVERSATION_ID,
+      conversationId: finalConversationId,
     };
     setMessages((prev) => [...prev, messageWithConversation]);
 
@@ -372,11 +379,14 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
       // Converte 'sender' para 'role' (user -> user, amparo -> assistant)
       const role = message.sender === 'user' ? 'user' : 'assistant';
       
+      // Salva conversation_id no banco (null apenas para legacy)
+      const conversationIdForDB = finalConversationId === LEGACY_CONVERSATION_ID ? null : finalConversationId;
+      
       const { data, error } = await supabase
         .from('chat_messages')
         .insert({
           user_id: authUser.id,
-          conversation_id: messageWithConversation.conversationId === LEGACY_CONVERSATION_ID ? null : messageWithConversation.conversationId,
+          conversation_id: conversationIdForDB,
           role,
           content: messageWithConversation.content,
           timestamp: messageWithConversation.timestamp.toISOString(),
@@ -387,7 +397,12 @@ export function AmparoProvider({ children }: { children: ReactNode }) {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Erro ao salvar mensagem no Supabase:', error);
+        throw error;
+      }
+
+      console.log('✅ Mensagem salva no banco:', data.id, 'Conversa:', conversationIdForDB);
 
       // Atualiza a mensagem no estado local com o ID do banco
       setMessages((prev) =>
